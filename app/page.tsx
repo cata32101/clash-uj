@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Zap, Crown, Coins, Timer, Users, Eye, Play, Pause, Swords, Bot, UserPlus } from "lucide-react"
+import { Zap, Crown, Coins, Timer, Users, Eye, Play, Pause, Swords, Bot, UserPlus, LogIn } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { supabase } from "@/lib/supabase"
 import type { User } from "@supabase/supabase-js"
@@ -168,6 +168,7 @@ interface GameState {
   currentUser: User | null
   currentProfile: Profile | null
   currentLobby: Lobby | null
+  activeLobbies: Lobby[];
   phase: "login" | "menu" | "lobby" | "prep" | "battle" | "result"
   phaseTime: number
   players: Record<PlayerType, PlayerState>
@@ -190,7 +191,7 @@ interface GameState {
   loginForm: { email: string; password: string; username: string }
   joinLobbyCode: string
   wager: number
-  menuSelection: '2p' | '4p' | null;
+  isLoading: boolean;
 }
 
 export default function FourPlayerBattleArena() {
@@ -198,6 +199,7 @@ export default function FourPlayerBattleArena() {
     currentUser: null,
     currentProfile: null,
     currentLobby: null,
+    activeLobbies: [],
     phase: "login",
     phaseTime: 0,
     players: {} as Record<PlayerType, PlayerState>,
@@ -220,7 +222,7 @@ export default function FourPlayerBattleArena() {
     loginForm: { email: "", password: "", username: "" },
     joinLobbyCode: "",
     wager: 25,
-    menuSelection: null,
+    isLoading: false,
   })
 
   const gameLoopRef = useRef<number>()
@@ -257,6 +259,43 @@ export default function FourPlayerBattleArena() {
       authListener.subscription.unsubscribe()
     }
   }, [])
+
+  // --- LOBBY BROWSER SUBSCRIPTION ---
+  useEffect(() => {
+    if (gameState.phase !== 'menu') return;
+
+    const fetchLobbies = async () => {
+        const { data, error } = await supabase
+            .from('lobbies')
+            .select('*')
+            .eq('is_private', false)
+            .eq('status', 'waiting');
+
+        if (error) {
+            console.error('Error fetching lobbies:', error);
+        } else {
+            setGameState(p => ({ ...p, activeLobbies: data as Lobby[] }));
+        }
+    };
+
+    fetchLobbies();
+
+    const channel = supabase
+      .channel('public-lobbies')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'lobbies' },
+        (payload) => {
+          fetchLobbies(); // Refetch lobbies on any change
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [gameState.phase]);
+
 
   const createAccount = async () => {
     const { email, password, username } = gameState.loginForm
@@ -298,6 +337,7 @@ export default function FourPlayerBattleArena() {
   const createLobby = async (gameMode: "2player" | "4player", isPrivate: boolean, wager: number) => {
     if (!gameState.currentProfile || !gameState.currentUser) return alert("You must be logged in.");
     if (wager > 0 && gameState.currentProfile.credits < wager) return alert("Not enough credits!");
+    setGameState(p => ({...p, isLoading: true}));
 
     const playerPositions = gameMode === "4player" ? PLAYER_POSITIONS_4P : PLAYER_POSITIONS_2P;
     const newLobbyCode = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -314,7 +354,7 @@ export default function FourPlayerBattleArena() {
     const playersList: LobbyPlayer[] = [hostPlayer];
     
     // If it's a public game vs AI, fill the slots now
-    if (!isPrivate) {
+    if (!isPrivate && wager === 0) { // This is a Training game
       const maxPlayers = gameMode === "4player" ? 4 : 2;
       for (let i = 1; i < maxPlayers; i++) {
         const slot = `player${i + 1}` as PlayerType;
@@ -343,45 +383,54 @@ export default function FourPlayerBattleArena() {
       .select()
       .single();
 
+    setGameState(p => ({...p, isLoading: false}));
     if (error) {
       console.error("Error creating lobby:", error);
       alert("Could not create lobby.");
     } else if (data) {
-        if(isPrivate) {
+        if(isPrivate || wager > 0) {
             setGameState((p) => ({ ...p, currentLobby: data, phase: "lobby" }));
         } else {
-            // If it's a game vs AI, start immediately
             startGame(data);
         }
     }
   };
   
-  const joinLobby = async () => {
+  const joinLobby = async (lobbyToJoin?: Lobby) => {
     const code = gameState.joinLobbyCode.toUpperCase();
-    if (!code) return alert("Please enter a lobby code.");
+    if (!lobbyToJoin && !code) return alert("Please enter a lobby code or select a lobby.");
     if (!gameState.currentProfile || !gameState.currentUser) return alert("You must be logged in to join a lobby.");
-
-    const { data: lobby, error } = await supabase
-        .from('lobbies')
-        .select('*')
-        .eq('code', code)
-        .single();
-
-    if (error || !lobby) {
-        return alert(`Lobby "${code}" not found.`);
-    }
     
+    setGameState(p => ({...p, isLoading: true}));
+
+    let lobby = lobbyToJoin;
+    if (!lobby) {
+        const { data, error } = await supabase
+            .from('lobbies')
+            .select('*')
+            .eq('code', code)
+            .single();
+
+        if (error || !data) {
+            setGameState(p => ({...p, isLoading: false}));
+            return alert(`Lobby "${code}" not found.`);
+        }
+        lobby = data;
+    }
+
     const maxPlayers = lobby.game_mode === "4player" ? 4 : 2;
     if (lobby.players.length >= maxPlayers) {
+        setGameState(p => ({...p, isLoading: false}));
         return alert("Lobby is full.");
     }
 
     if (lobby.players.some((p: LobbyPlayer) => p.id === gameState.currentUser?.id)) {
-       setGameState((p) => ({ ...p, currentLobby: lobby as Lobby, phase: "lobby" }));
+       setGameState((p) => ({ ...p, currentLobby: lobby as Lobby, phase: "lobby", isLoading: false }));
        return;
     }
 
     if (gameState.currentProfile.credits < lobby.wager) {
+        setGameState(p => ({...p, isLoading: false}));
         return alert("You don't have enough credits to join this lobby.");
     }
 
@@ -400,11 +449,13 @@ export default function FourPlayerBattleArena() {
     const { data: updatedLobby, error: updateError } = await supabase
         .from('lobbies')
         .update({ players: [...lobby.players, newPlayer] })
-        .eq('code', code)
+        .eq('id', lobby.id)
         .select()
         .single();
     
+    setGameState(p => ({...p, isLoading: false}));
     if (updateError) {
+        console.error("Join lobby error:", updateError);
         return alert("Failed to join lobby.");
     }
     
@@ -416,8 +467,7 @@ export default function FourPlayerBattleArena() {
     
     const updatedPlayers = gameState.currentLobby.players.filter(p => p.id !== gameState.currentUser?.id);
 
-    // If host leaves, delete lobby. Otherwise, just update players.
-    if (gameState.currentUser.id === gameState.currentLobby.host_id) {
+    if (gameState.currentUser.id === gameState.currentLobby.host_id || updatedPlayers.length === 0) {
         await supabase.from('lobbies').delete().eq('id', gameState.currentLobby.id);
     } else {
         await supabase.from('lobbies').update({ players: updatedPlayers }).eq('id', gameState.currentLobby.id);
@@ -433,7 +483,6 @@ export default function FourPlayerBattleArena() {
     const maxPlayers = lobby.game_mode === '4player' ? 4 : 2;
     const playerPositions = lobby.game_mode === "4player" ? PLAYER_POSITIONS_4P : PLAYER_POSITIONS_2P;
 
-    // Fill remaining slots with AI if lobby isn't full
     while (currentPlayers.length < maxPlayers) {
         const slot = `player${currentPlayers.length + 1}` as PlayerType;
         currentPlayers.push({
@@ -488,13 +537,13 @@ export default function FourPlayerBattleArena() {
           event: "*",
           schema: "public",
           table: "lobbies",
-          filter: `code=eq.${gameState.currentLobby.code}`,
+          filter: `id=eq.${gameState.currentLobby.id}`,
         },
         (payload) => {
           if (payload.eventType === 'DELETE') {
               alert("The host has left the lobby.");
               setGameState((p) => ({ ...p, currentLobby: null, phase: "menu" }));
-          } else {
+          } else if (payload.new) {
               setGameState((p) => ({ ...p, currentLobby: payload.new as Lobby }));
           }
         }
@@ -1013,74 +1062,97 @@ export default function FourPlayerBattleArena() {
   if (gameState.phase === "menu")
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-blue-900 text-white flex flex-col items-center justify-center p-4">
-        <div className="text-center space-y-8 max-w-4xl w-full">
+        <div className="text-center space-y-4 max-w-6xl w-full">
           <h1 className="text-4xl md:text-8xl font-bold bg-gradient-to-r from-orange-400 via-red-500 to-purple-600 bg-clip-text text-transparent animate-pulse">
             GRID CONQUEST
           </h1>
           <p className="text-lg md:text-2xl text-gray-300">Welcome, {gameState.currentProfile?.username}</p>
           <div className="flex justify-center space-x-4 md:space-x-8">
-            <Badge className="text-lg md:text-2xl px-4 md:px-6 py-2 md:py-3 bg-green-500/20 border-green-500">
-              <Coins className="w-4 md:w-6 h-4 md:h-6 mr-2" />
+            <Badge className="text-lg md:text-xl px-4 py-2 bg-green-500/20 border-green-500">
+              <Coins className="w-5 h-5 mr-2" />
               Credits: {gameState.currentProfile?.credits}
             </Badge>
-            <Badge className="text-lg md:text-2xl px-4 md:px-6 py-2 md:py-3 bg-purple-500/20 border-purple-500">
-              <Users className="w-4 md:w-6 h-4 md:h-6 mr-2" />
-              Online: {Math.floor(Math.random() * 2000) + 3000}
-            </Badge>
           </div>
-          <Card className="p-6 md:p-8 bg-gray-800/50 border-gray-600">
-            <h3 className="text-2xl md:text-3xl font-bold mb-6 text-yellow-400">CHOOSE YOUR BATTLE</h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Button onClick={() => createLobby(gameState.gameMode, false, 0)} className="w-full text-lg py-6 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-400 hover:to-gray-500 font-bold flex-col h-auto">
-                    <Bot className="w-8 h-8 mb-2" />
-                    Play vs. AI (Free)
-                </Button>
-                <Button onClick={() => createLobby(gameState.gameMode, true, gameState.wager)} className="w-full text-lg py-6 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-400 hover:to-cyan-400 font-bold flex-col h-auto">
-                    <Swords className="w-8 h-8 mb-2" />
-                    Create Private Lobby
-                </Button>
-                <div className="space-y-2">
-                     <Input
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-4">
+            {/* Left Column: Play Options */}
+            <div className="space-y-4">
+                <Card className="p-6 bg-gray-800/50 border-gray-600 text-left">
+                    <CardTitle className="mb-4 text-yellow-400">Play Game</CardTitle>
+                    <div className="space-y-4">
+                        <div>
+                            <Label className="text-base font-semibold mb-2 block">1. Choose Game Mode</Label>
+                            <div className="flex items-center justify-start gap-4">
+                                <Button onClick={() => setGameState(p => ({...p, gameMode: '2player'}))} variant={gameState.gameMode === '2player' ? 'secondary' : 'outline'}>2 Players</Button>
+                                <Button onClick={() => setGameState(p => ({...p, gameMode: '4player'}))} variant={gameState.gameMode === '4player' ? 'secondary' : 'outline'}>4 Players</Button>
+                            </div>
+                        </div>
+                         <div>
+                            <Label className="text-base font-semibold mb-2 block">2. Choose Wager</Label>
+                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                              {[0, 10, 25, 50].map((amount) => (
+                                <Button
+                                  key={amount}
+                                  onClick={() => setGameState((p) => ({ ...p, wager: amount }))}
+                                  variant={gameState.wager === amount ? "secondary" : "outline"}
+                                  className={cn("text-sm md:text-base py-2", gameState.wager === amount && "ring-2 ring-yellow-400")}
+                                  disabled={gameState.currentProfile!.credits < amount}
+                                >
+                                  {amount === 0 ? "Training" : `${amount} Credits`}
+                                </Button>
+                              ))}
+                            </div>
+                        </div>
+                        <div className="pt-4 space-y-3">
+                             <Button onClick={() => createLobby(gameState.gameMode, false, gameState.wager)} disabled={gameState.isLoading || gameState.currentProfile!.credits < gameState.wager} className="w-full text-lg py-3 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 font-bold">
+                                <LogIn className="w-5 h-5 mr-2" />
+                                {gameState.wager === 0 ? 'Start Training vs. AI' : `Find Public Match (${gameState.wager} credits)`}
+                            </Button>
+                             <Button onClick={() => createLobby(gameState.gameMode, true, gameState.wager)} disabled={gameState.isLoading || gameState.currentProfile!.credits < gameState.wager} className="w-full text-lg py-3 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-400 hover:to-cyan-400 font-bold">
+                                <Swords className="w-5 h-5 mr-2" />
+                                Create Private Lobby
+                            </Button>
+                        </div>
+                    </div>
+                </Card>
+                 <Card className="p-6 bg-gray-800/50 border-gray-600 text-left">
+                    <CardTitle className="mb-4 text-cyan-400">Join by Code</CardTitle>
+                    <div className="flex space-x-2">
+                      <Input
                         id="lobby-code"
                         placeholder="LOBBY CODE"
-                        className="bg-gray-900 text-center h-12 text-lg"
+                        className="bg-gray-900 h-12 text-lg"
                         value={gameState.joinLobbyCode}
                         onChange={(e) => setGameState((p) => ({ ...p, joinLobbyCode: e.target.value.toUpperCase() }))}
                       />
-                    <Button onClick={joinLobby} className="w-full text-lg py-3 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 font-bold">
+                    <Button onClick={() => joinLobby()} disabled={gameState.isLoading} className="w-full text-lg py-3 h-12">
                         <UserPlus className="w-5 h-5 mr-2" />
-                        Join Lobby
+                        Join
                     </Button>
-                </div>
+                    </div>
+                </Card>
             </div>
 
-            <div className="mt-6 space-y-4">
-              <div className="flex items-center justify-center gap-4">
-                <Label className="text-lg font-semibold">Game Mode:</Label>
-                <Button onClick={() => setGameState(p => ({...p, gameMode: '2player'}))} variant={gameState.gameMode === '2player' ? 'secondary' : 'outline'}>2 Players</Button>
-                <Button onClick={() => setGameState(p => ({...p, gameMode: '4player'}))} variant={gameState.gameMode === '4player' ? 'secondary' : 'outline'}>4 Players</Button>
-              </div>
-
-              <div>
-                <Label className="text-lg font-semibold mb-3 block">Entry Fee (for Private Lobbies):</Label>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {[10, 25, 50, 100].map((amount) => (
-                    <Button
-                      key={amount}
-                      onClick={() => setGameState((p) => ({ ...p, wager: amount }))}
-                      variant={gameState.wager === amount ? "secondary" : "outline"}
-                      className="text-sm md:text-lg py-2 md:py-3"
-                      disabled={gameState.currentProfile!.credits < amount}
-                    >
-                      {amount} Credits
-                    </Button>
-                  ))}
-                </div>
-              </div>
+            {/* Right Column: Lobby Browser */}
+            <div className="space-y-4">
+                <Card className="p-6 bg-gray-800/50 border-gray-600 text-left h-full">
+                    <CardTitle className="mb-4 text-purple-400">Public Lobbies</CardTitle>
+                    <div className="space-y-3 max-h-[360px] overflow-y-auto pr-2">
+                        {gameState.activeLobbies.length === 0 && <p className="text-gray-400">No public lobbies found. Why not create one?</p>}
+                        {gameState.activeLobbies.map(lobby => (
+                            <Card key={lobby.id} className="p-3 bg-gray-700/50 flex items-center justify-between">
+                                <div>
+                                    <p className="font-bold">{lobby.players[0]?.username}'s Game</p>
+                                    <p className="text-sm text-gray-300">{lobby.players.length}/{lobby.game_mode === '2player' ? 2 : 4} Players | <span className="text-yellow-400">{lobby.wager} Credits</span></p>
+                                </div>
+                                <Button size="sm" onClick={() => joinLobby(lobby)} disabled={gameState.isLoading}>Join</Button>
+                            </Card>
+                        ))}
+                    </div>
+                </Card>
             </div>
-          </Card>
-          <Button variant="destructive" onClick={logout}>
+          </div>
+          <Button variant="destructive" onClick={logout} className="mt-6 mx-auto">
             Logout
           </Button>
         </div>
@@ -1094,7 +1166,7 @@ export default function FourPlayerBattleArena() {
           <CardHeader>
             <CardTitle className="text-center text-2xl font-mono">GAME LOBBY</CardTitle>
             <div className="text-center text-gray-400">
-              Code: <Badge>{gameState.currentLobby?.code}</Badge>
+              Share Code: <Badge variant="secondary" className="text-lg">{gameState.currentLobby?.code}</Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
