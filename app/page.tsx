@@ -28,12 +28,12 @@ const BATTLE_TIME = 240
 const MANA_MAX = 10
 const MANA_REGEN_RATE = 1000
 
-// Player positions for 4-player mode
+// Player positions for 4-player mode - CORNER POSITIONS for better strategy
 const PLAYER_POSITIONS = {
-  player1: { towerX: 12, towerY: 23, color: "#22C55E", name: "YOU", icon: "👑" },
-  player2: { towerX: 23, towerY: 12, color: "#EF4444", name: "EAST", icon: "🔴" },
-  player3: { towerX: 12, towerY: 0, color: "#3B82F6", name: "NORTH", icon: "🔵" },
-  player4: { towerX: 0, towerY: 12, color: "#F59E0B", name: "WEST", icon: "🟡" },
+  player1: { towerX: 2, towerY: 21, color: "#22C55E", name: "YOU", icon: "👑" },
+  player2: { towerX: 21, towerY: 21, color: "#EF4444", name: "EAST", icon: "🔴" },
+  player3: { towerX: 21, towerY: 2, color: "#3B82F6", name: "NORTH", icon: "🔵" },
+  player4: { towerX: 2, towerY: 2, color: "#F59E0B", name: "WEST", icon: "🟡" },
 }
 
 // Enhanced unit types
@@ -160,7 +160,7 @@ const BUILDINGS = {
   wall: {
     name: "Wall",
     cost: 1,
-    hp: 100, // Reduced HP to make walls less OP
+    hp: 100,
     damage: 0,
     range: 0,
     icon: "🧱",
@@ -354,15 +354,17 @@ export default function FourPlayerBattleArena() {
         let owner: PlayerType | "neutral" = "neutral"
 
         if (mode === "4player") {
-          // 4-player territories
-          const centerX = GRID_SIZE / 2
-          const centerY = GRID_SIZE / 2
-          const territorySize = 6
+          // Corner territories for better strategic gameplay
+          const territorySize = 8
 
-          if (y >= GRID_SIZE - territorySize && Math.abs(x - centerX) < territorySize) owner = "player1"
-          else if (x >= GRID_SIZE - territorySize && Math.abs(y - centerY) < territorySize) owner = "player2"
-          else if (y < territorySize && Math.abs(x - centerX) < territorySize) owner = "player3"
-          else if (x < territorySize && Math.abs(y - centerY) < territorySize) owner = "player4"
+          // Player 1 - Bottom Left Corner
+          if (x < territorySize && y >= GRID_SIZE - territorySize) owner = "player1"
+          // Player 2 - Bottom Right Corner
+          else if (x >= GRID_SIZE - territorySize && y >= GRID_SIZE - territorySize) owner = "player2"
+          // Player 3 - Top Right Corner
+          else if (x >= GRID_SIZE - territorySize && y < territorySize) owner = "player3"
+          // Player 4 - Top Left Corner
+          else if (x < territorySize && y < territorySize) owner = "player4"
         } else {
           // 2-player mode
           if (y >= GRID_SIZE - 6) owner = "player1"
@@ -373,7 +375,7 @@ export default function FourPlayerBattleArena() {
       }
     }
 
-    // Place main towers
+    // Place main towers in corners
     if (mode === "4player") {
       Object.entries(PLAYER_POSITIONS).forEach(([player, pos]) => {
         grid[pos.towerY][pos.towerX] = {
@@ -463,8 +465,8 @@ export default function FourPlayerBattleArena() {
     }))
   }
 
-  // Enhanced pathfinding for 4-player
-  const getNextMovePosition = (unit: Unit, currentX: number, currentY: number) => {
+  // Enhanced pathfinding - ONLY target ALIVE players
+  const getNextMovePosition = (unit: Unit, currentX: number, currentY: number, alivePlayers: PlayerType[]) => {
     // If unit has a manual target, move towards it
     if (unit.targetX !== undefined && unit.targetY !== undefined) {
       const dx = unit.targetX - currentX
@@ -477,11 +479,11 @@ export default function FourPlayerBattleArena() {
       }
     }
 
-    // Find nearest enemy tower
+    // Find nearest ALIVE enemy tower
     let nearestTower: { x: number; y: number; distance: number } | null = null
 
     Object.entries(PLAYER_POSITIONS).forEach(([player, pos]) => {
-      if (player !== unit.owner && gameState.players[player as PlayerType].isAlive) {
+      if (player !== unit.owner && alivePlayers.includes(player as PlayerType)) {
         const distance = Math.sqrt(Math.pow(pos.towerX - currentX, 2) + Math.pow(pos.towerY - currentY, 2))
         if (!nearestTower || distance < nearestTower.distance) {
           nearestTower = { x: pos.towerX, y: pos.towerY, distance }
@@ -501,6 +503,22 @@ export default function FourPlayerBattleArena() {
     }
 
     return { x: currentX, y: currentY }
+  }
+
+  // Territory conquest function
+  const conquestTerritory = (defeatedPlayer: PlayerType, conqueror: PlayerType, grid: Tile[][]) => {
+    for (let y = 0; y < GRID_SIZE; y++) {
+      for (let x = 0; x < GRID_SIZE; x++) {
+        if (grid[y][x].owner === defeatedPlayer) {
+          grid[y][x].owner = conqueror
+
+          // Convert buildings to conqueror's ownership
+          if (grid[y][x].building && grid[y][x].building!.owner === defeatedPlayer) {
+            grid[y][x].building!.owner = conqueror
+          }
+        }
+      }
+    }
   }
 
   // Phase timer
@@ -579,6 +597,7 @@ export default function FourPlayerBattleArena() {
         const newProjectiles = [...prev.projectiles]
         const newDamageNumbers = [...prev.damageNumbers]
         const newExplosions = [...prev.explosions]
+        let newAlivePlayers = [...prev.alivePlayers]
 
         // Enhanced projectile physics
         for (let i = newProjectiles.length - 1; i >= 0; i--) {
@@ -642,10 +661,17 @@ export default function FourPlayerBattleArena() {
               // Apply damage to buildings (INCLUDING WALLS!)
               if (targetTile.building && targetTile.building.owner !== projectile.owner) {
                 const building = targetTile.building
+                const oldHp = building.hp
                 building.hp -= projectile.damage
 
                 if (building.isMainTower) {
                   newPlayers[building.owner].hp = building.hp
+
+                  // Check if player was defeated and handle territory conquest
+                  if (building.hp <= 0 && oldHp > 0) {
+                    newAlivePlayers = newAlivePlayers.filter((p) => p !== building.owner)
+                    conquestTerritory(building.owner, projectile.owner, newGrid)
+                  }
                 }
 
                 newDamageNumbers.push({
@@ -847,9 +873,16 @@ export default function FourPlayerBattleArena() {
                         })
                       } else {
                         // Melee attack on buildings (including walls!)
+                        const oldHp = building.hp
                         building.hp -= unitStats.damage
                         if (building.isMainTower) {
                           newPlayers[building.owner].hp = building.hp
+
+                          // Check if player was defeated and handle territory conquest
+                          if (building.hp <= 0 && oldHp > 0) {
+                            newAlivePlayers = newAlivePlayers.filter((p) => p !== building.owner)
+                            conquestTerritory(building.owner, unit.owner, newGrid)
+                          }
                         }
 
                         newDamageNumbers.push({
@@ -871,9 +904,9 @@ export default function FourPlayerBattleArena() {
                 if (foundTarget) break
               }
 
-              // Enhanced movement with 4-player pathfinding
+              // Enhanced movement with 4-player pathfinding - ONLY target alive players
               if (!foundTarget && unit.moveCooldown === 0) {
-                const nextPos = getNextMovePosition(unit, x, y)
+                const nextPos = getNextMovePosition(unit, x, y, newAlivePlayers)
 
                 if (nextPos.x !== x || nextPos.y !== y) {
                   if (
@@ -993,8 +1026,8 @@ export default function FourPlayerBattleArena() {
           }
         }
 
-        // Enhanced AI for multiple players
-        prev.alivePlayers.forEach((player) => {
+        // Enhanced AI for multiple players - ONLY alive players
+        newAlivePlayers.forEach((player) => {
           if (newPlayers[player].isAI && Math.random() < 0.06 && newPlayers[player].mana >= 2) {
             const availableCards = prev.deck.filter((card) => {
               const cost =
@@ -1042,9 +1075,7 @@ export default function FourPlayerBattleArena() {
           }
         })
 
-        // Update alive players and check win conditions
-        const newAlivePlayers = prev.alivePlayers.filter((player) => newPlayers[player].hp > 0)
-
+        // Check win conditions
         if (newAlivePlayers.length <= 1) {
           return {
             ...prev,
@@ -1347,7 +1378,7 @@ export default function FourPlayerBattleArena() {
           <h1 className="text-4xl md:text-8xl font-bold bg-gradient-to-r from-orange-400 via-red-500 to-purple-600 bg-clip-text text-transparent animate-pulse">
             4-PLAYER ARENA
           </h1>
-          <p className="text-lg md:text-2xl text-gray-300">Epic Battles • Walls Can Be Destroyed • 4-Way Combat</p>
+          <p className="text-lg md:text-2xl text-gray-300">Epic Battles • Territory Conquest • Corner Strategy</p>
 
           <div className="flex justify-center space-x-4 md:space-x-8">
             <Badge className="text-lg md:text-2xl px-4 md:px-6 py-2 md:py-3 bg-green-500/20 border-green-500">
@@ -1379,7 +1410,7 @@ export default function FourPlayerBattleArena() {
 
               <div className="space-y-4">
                 <h4 className="text-xl font-bold text-red-400">⚔️ 4-PLAYER CHAOS</h4>
-                <p className="text-sm text-gray-300">Epic 4-way battle royale</p>
+                <p className="text-sm text-gray-300">Epic corner-based conquest</p>
                 <Button
                   onClick={() => startGame("4player")}
                   disabled={gameState.credits < gameState.wager}
@@ -1421,10 +1452,10 @@ export default function FourPlayerBattleArena() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 text-left">
             <div className="space-y-3">
               <h3 className="text-xl md:text-2xl font-bold text-orange-400">🔥 NEW FEATURES:</h3>
-              <p className="text-sm md:text-base">• Walls can now be destroyed!</p>
-              <p className="text-sm md:text-base">• 4-player battle royale mode</p>
-              <p className="text-sm md:text-base">• Enhanced combat mechanics</p>
-              <p className="text-sm md:text-base">• Smart multi-target pathfinding</p>
+              <p className="text-sm md:text-base">• Territory conquest system!</p>
+              <p className="text-sm md:text-base">• Corner-based strategic positioning</p>
+              <p className="text-sm md:text-base">• Defeat enemies to claim their land</p>
+              <p className="text-sm md:text-base">• Smart targeting (only alive players)</p>
             </div>
             <div className="space-y-3">
               <h3 className="text-xl md:text-2xl font-bold text-red-400">⚔️ TACTICAL COMBAT:</h3>
@@ -1512,480 +1543,493 @@ export default function FourPlayerBattleArena() {
     )
   }
 
-  // Enhanced 4-Player Game Screen
+  // NEW LAYOUT: Map on Left (2/3) + Controls on Right (1/3)
   return (
-    <div className="w-full h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white overflow-hidden flex flex-col">
-      {/* Enhanced Header for 4-Player */}
-      <div className="flex-shrink-0 p-2 md:p-4 space-y-2 md:space-y-4 bg-gray-800/50 backdrop-blur-sm border-b border-gray-700">
-        {/* Phase Header */}
-        <div className="text-center">
-          <h2
-            className={`text-xl md:text-3xl font-bold ${gameState.phase === "prep" ? "text-blue-400" : "text-red-400"}`}
-          >
-            {gameState.phase === "prep" ? "🏗️ PREPARATION" : "⚔️ 4-PLAYER BATTLE"}
-          </h2>
-          <Badge className="text-sm md:text-xl px-3 md:px-4 py-1 md:py-2 bg-yellow-600 mt-1 md:mt-2">
-            <Timer className="w-3 md:w-5 h-3 md:h-5 mr-1 md:mr-2" />
-            {formatTime(gameState.phaseTime)}
-          </Badge>
-        </div>
-
-        {/* 4-Player Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs md:text-sm">
-          {Object.entries(PLAYER_POSITIONS).map(([player, pos]) => {
-            const playerState = gameState.players[player as PlayerType]
-            const isAlive = gameState.alivePlayers.includes(player as PlayerType)
-
-            return (
-              <div key={player} className={`flex items-center space-x-2 ${!isAlive ? "opacity-50" : ""}`}>
-                <div
-                  className="w-4 h-4 rounded-full flex items-center justify-center"
-                  style={{ backgroundColor: pos.color }}
-                >
-                  <span className="text-xs">{pos.icon}</span>
-                </div>
-                <div>
-                  <div className="font-bold">{pos.name}</div>
-                  <div className="flex space-x-1">
-                    <Badge className="px-1 py-0 text-xs" style={{ backgroundColor: pos.color }}>
-                      HP: {Math.max(0, playerState.hp)}
-                    </Badge>
-                    {player === "player1" && (
-                      <Badge className="px-1 py-0 text-xs bg-blue-600">
-                        <Zap className="w-2 h-2 mr-1" />
-                        {playerState.mana}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Control Buttons */}
-        <div className="flex justify-center space-x-2">
-          <Button
-            onClick={() => setGameState((prev) => ({ ...prev, showRanges: !prev.showRanges }))}
-            variant="outline"
-            size="sm"
-            className="px-2 py-1 text-xs"
-          >
-            <Eye className="w-3 h-3 mr-1" />
-            <span className="hidden sm:inline">Ranges</span>
-          </Button>
-          <Button
-            onClick={() => setGameState((prev) => ({ ...prev, isPaused: !prev.isPaused }))}
-            variant="outline"
-            size="sm"
-            className="px-2 py-1 text-xs"
-          >
-            {gameState.isPaused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
-          </Button>
-          {gameState.spectators > 0 && (
-            <Badge className="px-2 py-1 bg-purple-500 text-xs">
-              <Users className="w-3 h-3 mr-1" />
-              {gameState.spectators}
+    <div className="w-full h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white overflow-hidden flex">
+      {/* LEFT SIDE: Game Map (2/3 of screen) */}
+      <div className="w-2/3 h-full flex flex-col">
+        {/* Compact Header */}
+        <div className="flex-shrink-0 p-3 bg-gray-800/50 backdrop-blur-sm border-b border-gray-700">
+          <div className="text-center mb-2">
+            <h2 className={`text-2xl font-bold ${gameState.phase === "prep" ? "text-blue-400" : "text-red-400"}`}>
+              {gameState.phase === "prep" ? "🏗️ PREPARATION" : "⚔️ 4-PLAYER BATTLE"}
+            </h2>
+            <Badge className="text-lg px-4 py-2 bg-yellow-600 mt-1">
+              <Timer className="w-4 h-4 mr-2" />
+              {formatTime(gameState.phaseTime)}
             </Badge>
-          )}
-        </div>
-
-        {/* Enhanced Mana Bar */}
-        <div className="relative">
-          <Progress value={(gameState.players.player1.mana / MANA_MAX) * 100} className="h-2 md:h-3 bg-gray-700" />
-          <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white drop-shadow-lg">
-            Mana: {gameState.players.player1.mana}/{MANA_MAX}
-          </div>
-        </div>
-      </div>
-
-      {/* Enhanced 4-Player Game Grid */}
-      <div className="flex-1 flex justify-center items-center p-2 md:p-4">
-        <div
-          className="grid gap-0 border-4 border-gray-600 bg-gray-800 rounded-lg relative shadow-2xl"
-          style={{
-            gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)`,
-            width: "min(90vw, 600px)",
-            height: "min(90vw, 600px)",
-            aspectRatio: "1/1",
-          }}
-        >
-          {gameState.grid.map((row, y) =>
-            row.map((tile, x) => (
-              <div
-                key={`${x}-${y}`}
-                className={`
-                  border border-gray-600 cursor-pointer transition-all duration-150
-                  flex items-center justify-center relative
-                  hover:brightness-125 hover:border-yellow-400
-                  ${gameState.selectedCard ? "hover:ring-1 hover:ring-yellow-400" : ""}
-                  ${gameState.hoveredTile?.x === x && gameState.hoveredTile?.y === y ? "ring-1 ring-blue-400" : ""}
-                  ${gameState.selectedUnit && tile.owner === "player1" ? "hover:ring-1 hover:ring-green-400" : ""}
-                `}
-                style={{ backgroundColor: getTileColor(tile) }}
-                onClick={() => handleTileClick(x, y)}
-                onMouseEnter={() => handleTileHover(x, y)}
-                onMouseLeave={handleTileLeave}
-              >
-                {/* Range indicators */}
-                {gameState.showRanges &&
-                  tile.building &&
-                  BUILDINGS[tile.building.type].range > 0 &&
-                  gameState.grid.map((gridRow, gridY) =>
-                    gridRow.map((gridTile, gridX) => {
-                      const building = tile.building!
-                      const buildingStats = BUILDINGS[building.type]
-                      const inRange = isInRange(x, y, gridX, gridY, buildingStats.range, buildingStats.minRange)
-                      const inMinRange = isInRange(x, y, gridX, gridY, buildingStats.minRange, 0)
-
-                      if (inRange && !(gridX === x && gridY === y)) {
-                        return (
-                          <div
-                            key={`range-${gridX}-${gridY}`}
-                            className="absolute bg-yellow-400 opacity-20 pointer-events-none"
-                            style={{
-                              left: `${((gridX - x) * 100) / GRID_SIZE}%`,
-                              top: `${((gridY - y) * 100) / GRID_SIZE}%`,
-                              width: `${100 / GRID_SIZE}%`,
-                              height: `${100 / GRID_SIZE}%`,
-                            }}
-                          />
-                        )
-                      } else if (inMinRange && buildingStats.minRange > 0 && !(gridX === x && gridY === y)) {
-                        return (
-                          <div
-                            key={`deadzone-${gridX}-${gridY}`}
-                            className="absolute bg-red-500 opacity-30 pointer-events-none"
-                            style={{
-                              left: `${((gridX - x) * 100) / GRID_SIZE}%`,
-                              top: `${((gridY - y) * 100) / GRID_SIZE}%`,
-                              width: `${100 / GRID_SIZE}%`,
-                              height: `${100 / GRID_SIZE}%`,
-                            }}
-                          />
-                        )
-                      }
-                      return null
-                    }),
-                  )}
-
-                {/* Targeting lines */}
-                {tile.building && tile.building.targetX !== undefined && tile.building.targetY !== undefined && (
-                  <>
-                    <div
-                      className="absolute bg-red-500 opacity-60 pointer-events-none"
-                      style={{
-                        left: "50%",
-                        top: "50%",
-                        width: "1px",
-                        height: `${Math.sqrt(
-                          Math.pow((tile.building.targetX - x) * 25, 2) + Math.pow((tile.building.targetY - y) * 25, 2),
-                        )}px`,
-                        transformOrigin: "top",
-                        transform: `rotate(${
-                          Math.atan2(tile.building.targetY - y, tile.building.targetX - x) * (180 / Math.PI) + 90
-                        }deg)`,
-                      }}
-                    />
-                    {tile.building.type === "cannon" && (
-                      <Crosshair className="absolute top-0 right-0 w-1.5 h-1.5 text-red-400 animate-pulse" />
-                    )}
-                  </>
-                )}
-
-                {/* Enhanced Building */}
-                {tile.building && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div
-                      className={`absolute inset-0 rounded opacity-50`}
-                      style={{
-                        backgroundColor: PLAYER_POSITIONS[tile.building.owner]?.color || "#666",
-                        border: `1px solid ${PLAYER_POSITIONS[tile.building.owner]?.color || "#666"}`,
-                      }}
-                    />
-
-                    <span
-                      className={`text-xs md:text-sm font-bold relative z-10 ${
-                        gameState.selectedBuilding?.id === tile.building.id ? "animate-pulse" : ""
-                      } ${tile.building.charging && tile.building.charging > 5 ? "animate-bounce" : ""}`}
-                      style={{
-                        transform: tile.building.aimAngle ? `rotate(${tile.building.aimAngle}rad)` : "none",
-                        filter: tile.building.charging ? `brightness(${1 + tile.building.charging * 0.1})` : "none",
-                        textShadow: "1px 1px 2px #000",
-                        color: "white",
-                      }}
-                    >
-                      {BUILDINGS[tile.building.type].icon}
-                    </span>
-
-                    <div className="absolute bottom-0 right-0 bg-black text-white text-xs px-1 rounded font-bold">
-                      {tile.building.hp}
-                    </div>
-                    {tile.building.cooldown > 0 && (
-                      <div className="absolute top-0 left-0 bg-yellow-500 text-black text-xs px-1 rounded font-bold">
-                        {Math.ceil(tile.building.cooldown / 10)}
-                      </div>
-                    )}
-                    {tile.building.charging && tile.building.charging > 0 && (
-                      <div className="absolute -top-0.5 -left-0.5 w-full h-0.5 bg-yellow-400 rounded animate-pulse" />
-                    )}
-                  </div>
-                )}
-
-                {/* Enhanced Interactive Units */}
-                {tile.units.length > 0 && (
-                  <div className="absolute inset-0 flex flex-wrap items-center justify-center">
-                    {tile.units.slice(0, 4).map((unit, i) => (
-                      <div key={unit.id} className="relative">
-                        {/* Enhanced ownership background */}
-                        <div
-                          className={`absolute inset-0 rounded-full opacity-60 -m-0.5 ${
-                            gameState.selectedUnit?.id === unit.id ? "ring-2 ring-yellow-400 animate-pulse" : ""
-                          }`}
-                          style={{
-                            backgroundColor: PLAYER_POSITIONS[unit.owner]?.color || "#666",
-                            border: `1px solid ${PLAYER_POSITIONS[unit.owner]?.color || "#666"}`,
-                          }}
-                        />
-
-                        <span
-                          className={`text-xs md:text-sm font-bold relative z-10 text-white ${
-                            unit.lastDamage ? "animate-bounce" : ""
-                          } ${unit.isMoving ? "animate-pulse" : ""}`}
-                          style={{
-                            filter: unit.frozen > 0 ? "brightness(0.5) sepia(1) hue-rotate(180deg)" : "none",
-                            transform: `scale(${UNITS[unit.type].size * 0.8})`,
-                            textShadow: "1px 1px 2px #000",
-                          }}
-                        >
-                          {UNITS[unit.type].icon}
-                        </span>
-
-                        {/* Target indicator */}
-                        {unit.targetX !== undefined && unit.targetY !== undefined && (
-                          <div className="absolute -top-1 -right-1 w-1 h-1 bg-yellow-400 rounded-full animate-ping" />
-                        )}
-
-                        {/* Clearer ownership indicator */}
-                        <div
-                          className="absolute -top-1 -left-1 w-1.5 h-1.5 rounded-full"
-                          style={{ backgroundColor: PLAYER_POSITIONS[unit.owner]?.color || "#666" }}
-                        />
-
-                        {unit.frozen > 0 && (
-                          <Snowflake className="absolute -top-1 -right-1 w-1.5 h-1.5 text-blue-400" />
-                        )}
-                        {unit.hp < unit.maxHp && (
-                          <div className="absolute -bottom-2 left-0 w-full h-0.5 bg-gray-800 rounded border">
-                            <div
-                              className="h-full rounded"
-                              style={{
-                                backgroundColor: PLAYER_POSITIONS[unit.owner]?.color || "#666",
-                                width: `${(unit.hp / unit.maxHp) * 100}%`,
-                              }}
-                            />
-                          </div>
-                        )}
-                        {unit.moveCooldown > 0 && (
-                          <div className="absolute -top-2 left-0 w-full h-0.5 bg-blue-400 rounded opacity-80" />
-                        )}
-                      </div>
-                    ))}
-                    {tile.units.length > 4 && (
-                      <span className="text-xs text-yellow-300 font-bold bg-black px-1 rounded">
-                        +{tile.units.length - 4}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            )),
-          )}
-
-          {/* Enhanced Projectiles */}
-          {gameState.projectiles.map((projectile) => (
-            <div key={projectile.id}>
-              {/* Projectile trail */}
-              {projectile.trail.map((trailPoint, index) => (
-                <div
-                  key={`trail-${index}`}
-                  className="absolute w-1 h-1 rounded-full pointer-events-none"
-                  style={{
-                    backgroundColor: projectile.color,
-                    left: `${(trailPoint.x / GRID_SIZE) * 100}%`,
-                    top: `${(trailPoint.y / GRID_SIZE) * 100}%`,
-                    opacity: 0.3 * (index / projectile.trail.length),
-                  }}
-                />
-              ))}
-
-              {/* Main projectile */}
-              <div
-                className="absolute w-1.5 h-1.5 rounded-full pointer-events-none animate-pulse"
-                style={{
-                  backgroundColor: projectile.color,
-                  left: `${(projectile.currentX / GRID_SIZE) * 100}%`,
-                  top: `${(projectile.currentY / GRID_SIZE) * 100}%`,
-                  boxShadow: `0 0 8px ${projectile.color}`,
-                }}
-              />
-            </div>
-          ))}
-
-          {/* Enhanced Explosions */}
-          {gameState.explosions.map((explosion) => (
-            <div
-              key={explosion.id}
-              className="absolute rounded-full pointer-events-none animate-ping"
-              style={{
-                backgroundColor: explosion.color,
-                left: `${(explosion.x / GRID_SIZE) * 100}%`,
-                top: `${(explosion.y / GRID_SIZE) * 100}%`,
-                width: `${(explosion.radius / GRID_SIZE) * 100}%`,
-                height: `${(explosion.radius / GRID_SIZE) * 100}%`,
-                opacity: explosion.opacity,
-                transform: "translate(-50%, -50%)",
-                boxShadow: `0 0 ${explosion.radius * 10}px ${explosion.color}`,
-              }}
-            />
-          ))}
-
-          {/* Enhanced Damage Numbers */}
-          {gameState.damageNumbers.map((damageNum) => (
-            <div
-              key={damageNum.id}
-              className={`absolute pointer-events-none font-bold text-xs ${
-                damageNum.isHealing ? "text-green-400" : "text-red-400"
-              }`}
-              style={{
-                left: `${(damageNum.x / GRID_SIZE) * 100}%`,
-                top: `${(damageNum.y / GRID_SIZE) * 100}%`,
-                opacity: damageNum.opacity,
-                transform: `translateY(-${(1 - damageNum.opacity) * 20}px) translateX(${damageNum.velocity.x * 50}px)`,
-                textShadow: "1px 1px 2px rgba(0,0,0,0.8)",
-              }}
-            >
-              {damageNum.isHealing ? "+" : "-"}
-              {damageNum.damage}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Enhanced Card Deck for 4-Player */}
-      <div className="flex-shrink-0 p-2 md:p-4 bg-gray-800/50 backdrop-blur-sm border-t border-gray-700">
-        <Card className="p-2 md:p-3 bg-gray-800 border-gray-600">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-sm md:text-lg font-bold">{gameState.phase === "prep" ? "🏗️ BUILD" : "⚔️ DEPLOY"}</h3>
-            <div className="flex space-x-1">
-              <Button
-                onClick={() =>
-                  setGameState((prev) => ({ ...prev, cardScrollIndex: Math.max(0, prev.cardScrollIndex - 1) }))
-                }
-                variant="outline"
-                size="sm"
-                className="px-2 py-1 text-xs"
-                disabled={gameState.cardScrollIndex === 0}
-              >
-                <ChevronLeft className="w-3 h-3" />
-              </Button>
-              <span className="text-xs px-2 py-1 text-gray-400">
-                {gameState.cardScrollIndex + 1}-{Math.min(gameState.cardScrollIndex + 4, gameState.deck.length)} of{" "}
-                {gameState.deck.length}
-              </span>
-              <Button
-                onClick={() =>
-                  setGameState((prev) => ({
-                    ...prev,
-                    cardScrollIndex: Math.min(prev.deck.length - 4, prev.cardScrollIndex + 1),
-                  }))
-                }
-                variant="outline"
-                size="sm"
-                className="px-2 py-1 text-xs"
-                disabled={gameState.cardScrollIndex >= gameState.deck.length - 4}
-              >
-                <ChevronRight className="w-3 h-3" />
-              </Button>
-            </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-1 md:gap-2">
-            {gameState.deck.slice(gameState.cardScrollIndex, gameState.cardScrollIndex + 4).map((card, index) => {
-              const cost = getCardCost(card)
-              const canAfford = gameState.players.player1.mana >= cost
-              const isSelected = gameState.selectedCard === card
+          {/* 4-Player Stats - Compact */}
+          <div className="grid grid-cols-4 gap-2 text-sm">
+            {Object.entries(PLAYER_POSITIONS).map(([player, pos]) => {
+              const playerState = gameState.players[player as PlayerType]
+              const isAlive = gameState.alivePlayers.includes(player as PlayerType)
 
               return (
-                <Button
-                  key={index}
-                  onClick={() =>
-                    setGameState((prev) => ({
-                      ...prev,
-                      selectedCard: prev.selectedCard === card ? null : card,
-                    }))
-                  }
-                  disabled={!canAfford}
-                  variant={isSelected ? "default" : "outline"}
-                  className={`
-          flex flex-col items-center p-1 md:p-2 h-20 md:h-24 text-xs
-          ${!canAfford ? "opacity-50" : ""}
-          ${isSelected ? "ring-2 ring-yellow-400 animate-pulse" : ""}
-        `}
-                >
-                  <span className="text-lg md:text-xl mb-1">{getCardIcon(card)}</span>
-                  <span className="capitalize font-semibold text-xs truncate w-full text-center">{card}</span>
-                  <Badge className="text-xs px-1 bg-purple-500 mt-1">{cost}</Badge>
-                </Button>
+                <div key={player} className={`flex items-center space-x-1 ${!isAlive ? "opacity-50" : ""}`}>
+                  <div
+                    className="w-3 h-3 rounded-full flex items-center justify-center"
+                    style={{ backgroundColor: pos.color }}
+                  >
+                    <span className="text-xs">{pos.icon}</span>
+                  </div>
+                  <div className="text-xs">
+                    <div className="font-bold">{pos.name}</div>
+                    <div>HP: {Math.max(0, playerState.hp)}</div>
+                  </div>
+                </div>
               )
             })}
           </div>
-        </Card>
-
-        {/* Enhanced Status Display */}
-        <div className="text-center mt-2 space-y-1">
-          <p className="text-xs md:text-sm text-gray-300">
-            {gameState.phase === "prep"
-              ? "🏗️ Build defenses! Walls can now be destroyed! Use ← → to scroll cards"
-              : gameState.gameMode === "4player"
-                ? "⚔️ 4-Player FREE-FOR-ALL! Everyone fights everyone! Last player alive wins!"
-                : "⚔️ Click units to command them! Use ← → to scroll cards"}
-          </p>
-          {gameState.selectedCard && (
-            <div className="bg-gray-700 rounded p-2 text-xs">
-              <p className="text-yellow-400 font-bold">
-                Selected: {gameState.selectedCard} (Cost: {getCardCost(gameState.selectedCard)} mana)
-              </p>
-              <p className="text-gray-300">{getCardDescription(gameState.selectedCard)}</p>
-            </div>
-          )}
-          {gameState.selectedUnit && (
-            <div className="bg-green-900/50 rounded p-2 text-xs">
-              <p className="text-green-400 font-bold">
-                Unit: {gameState.selectedUnit.type} (HP: {gameState.selectedUnit.hp}/{gameState.selectedUnit.maxHp})
-              </p>
-              <p className="text-gray-300">Click tile to set target!</p>
-            </div>
-          )}
-          {gameState.selectedBuilding && (
-            <div className="bg-blue-900/50 rounded p-2 text-xs">
-              <p className="text-blue-400 font-bold">
-                Building: {gameState.selectedBuilding.type} (HP: {gameState.selectedBuilding.hp}/
-                {gameState.selectedBuilding.maxHp})
-              </p>
-              <p className="text-gray-300">{getCardDescription(gameState.selectedBuilding.type)}</p>
-            </div>
-          )}
         </div>
-        {gameState.phase === "battle" && gameState.gameMode === "4player" && (
-          <div className="bg-red-900/50 rounded p-2 text-xs mt-2">
-            <p className="text-red-400 font-bold">🔥 4-PLAYER BATTLE ROYALE:</p>
-            <p className="text-gray-300">• Everyone attacks everyone else</p>
-            <p className="text-gray-300">• Units target nearest enemy tower</p>
-            <p className="text-gray-300">• Only 1 player can win!</p>
-            <p className="text-gray-300">• Destroy all enemy towers to victory!</p>
+
+        {/* Game Grid - Takes remaining space */}
+        <div className="flex-1 flex justify-center items-center p-4">
+          <div
+            className="grid gap-0 border-4 border-gray-600 bg-gray-800 rounded-lg relative shadow-2xl"
+            style={{
+              gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)`,
+              width: "min(90%, 600px)",
+              height: "min(90%, 600px)",
+              aspectRatio: "1/1",
+            }}
+          >
+            {gameState.grid.map((row, y) =>
+              row.map((tile, x) => (
+                <div
+                  key={`${x}-${y}`}
+                  className={`
+                    border border-gray-600 cursor-pointer transition-all duration-150
+                    flex items-center justify-center relative
+                    hover:brightness-125 hover:border-yellow-400
+                    ${gameState.selectedCard ? "hover:ring-1 hover:ring-yellow-400" : ""}
+                    ${gameState.hoveredTile?.x === x && gameState.hoveredTile?.y === y ? "ring-1 ring-blue-400" : ""}
+                    ${gameState.selectedUnit && tile.owner === "player1" ? "hover:ring-1 hover:ring-green-400" : ""}
+                  `}
+                  style={{ backgroundColor: getTileColor(tile) }}
+                  onClick={() => handleTileClick(x, y)}
+                  onMouseEnter={() => handleTileHover(x, y)}
+                  onMouseLeave={handleTileLeave}
+                >
+                  {/* Range indicators */}
+                  {gameState.showRanges &&
+                    tile.building &&
+                    BUILDINGS[tile.building.type].range > 0 &&
+                    gameState.grid.map((gridRow, gridY) =>
+                      gridRow.map((gridTile, gridX) => {
+                        const building = tile.building!
+                        const buildingStats = BUILDINGS[building.type]
+                        const inRange = isInRange(x, y, gridX, gridY, buildingStats.range, buildingStats.minRange)
+                        const inMinRange = isInRange(x, y, gridX, gridY, buildingStats.minRange, 0)
+
+                        if (inRange && !(gridX === x && gridY === y)) {
+                          return (
+                            <div
+                              key={`range-${gridX}-${gridY}`}
+                              className="absolute bg-yellow-400 opacity-20 pointer-events-none"
+                              style={{
+                                left: `${((gridX - x) * 100) / GRID_SIZE}%`,
+                                top: `${((gridY - y) * 100) / GRID_SIZE}%`,
+                                width: `${100 / GRID_SIZE}%`,
+                                height: `${100 / GRID_SIZE}%`,
+                              }}
+                            />
+                          )
+                        } else if (inMinRange && buildingStats.minRange > 0 && !(gridX === x && gridY === y)) {
+                          return (
+                            <div
+                              key={`deadzone-${gridX}-${gridY}`}
+                              className="absolute bg-red-500 opacity-30 pointer-events-none"
+                              style={{
+                                left: `${((gridX - x) * 100) / GRID_SIZE}%`,
+                                top: `${((gridY - y) * 100) / GRID_SIZE}%`,
+                                width: `${100 / GRID_SIZE}%`,
+                                height: `${100 / GRID_SIZE}%`,
+                              }}
+                            />
+                          )
+                        }
+                        return null
+                      }),
+                    )}
+
+                  {/* Targeting lines */}
+                  {tile.building && tile.building.targetX !== undefined && tile.building.targetY !== undefined && (
+                    <>
+                      <div
+                        className="absolute bg-red-500 opacity-60 pointer-events-none"
+                        style={{
+                          left: "50%",
+                          top: "50%",
+                          width: "1px",
+                          height: `${Math.sqrt(
+                            Math.pow((tile.building.targetX - x) * 25, 2) +
+                              Math.pow((tile.building.targetY - y) * 25, 2),
+                          )}px`,
+                          transformOrigin: "top",
+                          transform: `rotate(${
+                            Math.atan2(tile.building.targetY - y, tile.building.targetX - x) * (180 / Math.PI) + 90
+                          }deg)`,
+                        }}
+                      />
+                      {tile.building.type === "cannon" && (
+                        <Crosshair className="absolute top-0 right-0 w-1.5 h-1.5 text-red-400 animate-pulse" />
+                      )}
+                    </>
+                  )}
+
+                  {/* Enhanced Building */}
+                  {tile.building && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div
+                        className={`absolute inset-0 rounded opacity-50`}
+                        style={{
+                          backgroundColor: PLAYER_POSITIONS[tile.building.owner]?.color || "#666",
+                          border: `1px solid ${PLAYER_POSITIONS[tile.building.owner]?.color || "#666"}`,
+                        }}
+                      />
+
+                      <span
+                        className={`text-xs font-bold relative z-10 ${
+                          gameState.selectedBuilding?.id === tile.building.id ? "animate-pulse" : ""
+                        } ${tile.building.charging && tile.building.charging > 5 ? "animate-bounce" : ""}`}
+                        style={{
+                          transform: tile.building.aimAngle ? `rotate(${tile.building.aimAngle}rad)` : "none",
+                          filter: tile.building.charging ? `brightness(${1 + tile.building.charging * 0.1})` : "none",
+                          textShadow: "1px 1px 2px #000",
+                          color: "white",
+                        }}
+                      >
+                        {BUILDINGS[tile.building.type].icon}
+                      </span>
+
+                      <div className="absolute bottom-0 right-0 bg-black text-white text-xs px-1 rounded font-bold">
+                        {tile.building.hp}
+                      </div>
+                      {tile.building.cooldown > 0 && (
+                        <div className="absolute top-0 left-0 bg-yellow-500 text-black text-xs px-1 rounded font-bold">
+                          {Math.ceil(tile.building.cooldown / 10)}
+                        </div>
+                      )}
+                      {tile.building.charging && tile.building.charging > 0 && (
+                        <div className="absolute -top-0.5 -left-0.5 w-full h-0.5 bg-yellow-400 rounded animate-pulse" />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Enhanced Interactive Units */}
+                  {tile.units.length > 0 && (
+                    <div className="absolute inset-0 flex flex-wrap items-center justify-center">
+                      {tile.units.slice(0, 4).map((unit, i) => (
+                        <div key={unit.id} className="relative">
+                          {/* Enhanced ownership background */}
+                          <div
+                            className={`absolute inset-0 rounded-full opacity-60 -m-0.5 ${
+                              gameState.selectedUnit?.id === unit.id ? "ring-2 ring-yellow-400 animate-pulse" : ""
+                            }`}
+                            style={{
+                              backgroundColor: PLAYER_POSITIONS[unit.owner]?.color || "#666",
+                              border: `1px solid ${PLAYER_POSITIONS[unit.owner]?.color || "#666"}`,
+                            }}
+                          />
+
+                          <span
+                            className={`text-xs font-bold relative z-10 text-white ${
+                              unit.lastDamage ? "animate-bounce" : ""
+                            } ${unit.isMoving ? "animate-pulse" : ""}`}
+                            style={{
+                              filter: unit.frozen > 0 ? "brightness(0.5) sepia(1) hue-rotate(180deg)" : "none",
+                              transform: `scale(${UNITS[unit.type].size * 0.8})`,
+                              textShadow: "1px 1px 2px #000",
+                            }}
+                          >
+                            {UNITS[unit.type].icon}
+                          </span>
+
+                          {/* Target indicator */}
+                          {unit.targetX !== undefined && unit.targetY !== undefined && (
+                            <div className="absolute -top-1 -right-1 w-1 h-1 bg-yellow-400 rounded-full animate-ping" />
+                          )}
+
+                          {/* Clearer ownership indicator */}
+                          <div
+                            className="absolute -top-1 -left-1 w-1.5 h-1.5 rounded-full"
+                            style={{ backgroundColor: PLAYER_POSITIONS[unit.owner]?.color || "#666" }}
+                          />
+
+                          {unit.frozen > 0 && (
+                            <Snowflake className="absolute -top-1 -right-1 w-1.5 h-1.5 text-blue-400" />
+                          )}
+                          {unit.hp < unit.maxHp && (
+                            <div className="absolute -bottom-2 left-0 w-full h-0.5 bg-gray-800 rounded border">
+                              <div
+                                className="h-full rounded"
+                                style={{
+                                  backgroundColor: PLAYER_POSITIONS[unit.owner]?.color || "#666",
+                                  width: `${(unit.hp / unit.maxHp) * 100}%`,
+                                }}
+                              />
+                            </div>
+                          )}
+                          {unit.moveCooldown > 0 && (
+                            <div className="absolute -top-2 left-0 w-full h-0.5 bg-blue-400 rounded opacity-80" />
+                          )}
+                        </div>
+                      ))}
+                      {tile.units.length > 4 && (
+                        <span className="text-xs text-yellow-300 font-bold bg-black px-1 rounded">
+                          +{tile.units.length - 4}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )),
+            )}
+
+            {/* Enhanced Projectiles */}
+            {gameState.projectiles.map((projectile) => (
+              <div key={projectile.id}>
+                {/* Projectile trail */}
+                {projectile.trail.map((trailPoint, index) => (
+                  <div
+                    key={`trail-${index}`}
+                    className="absolute w-1 h-1 rounded-full pointer-events-none"
+                    style={{
+                      backgroundColor: projectile.color,
+                      left: `${(trailPoint.x / GRID_SIZE) * 100}%`,
+                      top: `${(trailPoint.y / GRID_SIZE) * 100}%`,
+                      opacity: 0.3 * (index / projectile.trail.length),
+                    }}
+                  />
+                ))}
+
+                {/* Main projectile */}
+                <div
+                  className="absolute w-1.5 h-1.5 rounded-full pointer-events-none animate-pulse"
+                  style={{
+                    backgroundColor: projectile.color,
+                    left: `${(projectile.currentX / GRID_SIZE) * 100}%`,
+                    top: `${(projectile.currentY / GRID_SIZE) * 100}%`,
+                    boxShadow: `0 0 8px ${projectile.color}`,
+                  }}
+                />
+              </div>
+            ))}
+
+            {/* Enhanced Explosions */}
+            {gameState.explosions.map((explosion) => (
+              <div
+                key={explosion.id}
+                className="absolute rounded-full pointer-events-none animate-ping"
+                style={{
+                  backgroundColor: explosion.color,
+                  left: `${(explosion.x / GRID_SIZE) * 100}%`,
+                  top: `${(explosion.y / GRID_SIZE) * 100}%`,
+                  width: `${(explosion.radius / GRID_SIZE) * 100}%`,
+                  height: `${(explosion.radius / GRID_SIZE) * 100}%`,
+                  opacity: explosion.opacity,
+                  transform: "translate(-50%, -50%)",
+                  boxShadow: `0 0 ${explosion.radius * 10}px ${explosion.color}`,
+                }}
+              />
+            ))}
+
+            {/* Enhanced Damage Numbers */}
+            {gameState.damageNumbers.map((damageNum) => (
+              <div
+                key={damageNum.id}
+                className={`absolute pointer-events-none font-bold text-xs ${
+                  damageNum.isHealing ? "text-green-400" : "text-red-400"
+                }`}
+                style={{
+                  left: `${(damageNum.x / GRID_SIZE) * 100}%`,
+                  top: `${(damageNum.y / GRID_SIZE) * 100}%`,
+                  opacity: damageNum.opacity,
+                  transform: `translateY(-${(1 - damageNum.opacity) * 20}px) translateX(${damageNum.velocity.x * 50}px)`,
+                  textShadow: "1px 1px 2px rgba(0,0,0,0.8)",
+                }}
+              >
+                {damageNum.isHealing ? "+" : "-"}
+                {damageNum.damage}
+              </div>
+            ))}
           </div>
-        )}
+        </div>
+      </div>
+
+      {/* RIGHT SIDE: Controls Panel (1/3 of screen) */}
+      <div className="w-1/3 h-full bg-gray-800/80 backdrop-blur-sm border-l border-gray-700 flex flex-col overflow-y-auto">
+        {/* Player Status */}
+        <div className="flex-shrink-0 p-4 border-b border-gray-700">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-green-400">YOUR STATUS</h3>
+              <Badge className="bg-green-600">
+                <Zap className="w-3 h-3 mr-1" />
+                {gameState.players.player1.mana}/{MANA_MAX}
+              </Badge>
+            </div>
+
+            <Progress value={(gameState.players.player1.mana / MANA_MAX) * 100} className="h-3 bg-gray-700" />
+
+            <div className="flex justify-between items-center">
+              <span className="text-sm">HP: {gameState.players.player1.hp}/300</span>
+              <div className="flex space-x-2">
+                <Button
+                  onClick={() => setGameState((prev) => ({ ...prev, showRanges: !prev.showRanges }))}
+                  variant="outline"
+                  size="sm"
+                  className="px-2 py-1 text-xs"
+                >
+                  <Eye className="w-3 h-3 mr-1" />
+                  Ranges
+                </Button>
+                <Button
+                  onClick={() => setGameState((prev) => ({ ...prev, isPaused: !prev.isPaused }))}
+                  variant="outline"
+                  size="sm"
+                  className="px-2 py-1 text-xs"
+                >
+                  {gameState.isPaused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Card Deck */}
+        <div className="flex-1 p-4">
+          <Card className="p-4 bg-gray-900 border-gray-600 h-full flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold">{gameState.phase === "prep" ? "🏗️ BUILD" : "⚔️ DEPLOY"}</h3>
+              <div className="flex space-x-1">
+                <Button
+                  onClick={() =>
+                    setGameState((prev) => ({ ...prev, cardScrollIndex: Math.max(0, prev.cardScrollIndex - 1) }))
+                  }
+                  variant="outline"
+                  size="sm"
+                  className="px-2 py-1"
+                  disabled={gameState.cardScrollIndex === 0}
+                >
+                  <ChevronLeft className="w-3 h-3" />
+                </Button>
+                <Button
+                  onClick={() =>
+                    setGameState((prev) => ({
+                      ...prev,
+                      cardScrollIndex: Math.min(prev.deck.length - 2, prev.cardScrollIndex + 1),
+                    }))
+                  }
+                  variant="outline"
+                  size="sm"
+                  className="px-2 py-1"
+                  disabled={gameState.cardScrollIndex >= gameState.deck.length - 2}
+                >
+                  <ChevronRight className="w-3 h-3" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Cards Grid - 2 columns for right panel */}
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              {gameState.deck.slice(gameState.cardScrollIndex, gameState.cardScrollIndex + 6).map((card, index) => {
+                const cost = getCardCost(card)
+                const canAfford = gameState.players.player1.mana >= cost
+                const isSelected = gameState.selectedCard === card
+
+                return (
+                  <Button
+                    key={index}
+                    onClick={() =>
+                      setGameState((prev) => ({
+                        ...prev,
+                        selectedCard: prev.selectedCard === card ? null : card,
+                      }))
+                    }
+                    disabled={!canAfford}
+                    variant={isSelected ? "default" : "outline"}
+                    className={`
+                      flex flex-col items-center p-3 h-24 text-sm
+                      ${!canAfford ? "opacity-50" : ""}
+                      ${isSelected ? "ring-2 ring-yellow-400 animate-pulse bg-yellow-600" : ""}
+                      hover:scale-105 transition-all duration-200
+                    `}
+                  >
+                    <span className="text-2xl mb-1">{getCardIcon(card)}</span>
+                    <span className="capitalize font-bold text-xs truncate w-full text-center">{card}</span>
+                    <Badge className="text-xs px-2 py-1 bg-purple-500 mt-1">{cost} ⚡</Badge>
+                  </Button>
+                )
+              })}
+            </div>
+
+            <div className="text-center text-xs text-gray-400 mb-4">
+              Cards {gameState.cardScrollIndex + 1}-{Math.min(gameState.cardScrollIndex + 6, gameState.deck.length)} of{" "}
+              {gameState.deck.length}
+            </div>
+
+            {/* Status Display */}
+            <div className="space-y-3 flex-1">
+              <p className="text-sm text-gray-300 text-center">
+                {gameState.phase === "prep"
+                  ? "🏗️ Build in your CORNER territory!"
+                  : "⚔️ CORNER CONQUEST! Defeat enemies to claim their territory!"}
+              </p>
+
+              {gameState.selectedCard && (
+                <div className="bg-yellow-900/50 rounded p-3 text-sm border border-yellow-600">
+                  <p className="text-yellow-400 font-bold">
+                    Selected: {gameState.selectedCard} (Cost: {getCardCost(gameState.selectedCard)} mana)
+                  </p>
+                  <p className="text-gray-300 text-xs mt-1">{getCardDescription(gameState.selectedCard)}</p>
+                </div>
+              )}
+
+              {gameState.selectedUnit && (
+                <div className="bg-green-900/50 rounded p-3 text-sm border border-green-600">
+                  <p className="text-green-400 font-bold">
+                    Unit: {gameState.selectedUnit.type} (HP: {gameState.selectedUnit.hp}/{gameState.selectedUnit.maxHp})
+                  </p>
+                  <p className="text-gray-300 text-xs mt-1">Click tile to set target!</p>
+                </div>
+              )}
+
+              {gameState.selectedBuilding && (
+                <div className="bg-blue-900/50 rounded p-3 text-sm border border-blue-600">
+                  <p className="text-blue-400 font-bold">
+                    Building: {gameState.selectedBuilding.type} (HP: {gameState.selectedBuilding.hp}/
+                    {gameState.selectedBuilding.maxHp})
+                  </p>
+                  <p className="text-gray-300 text-xs mt-1">{getCardDescription(gameState.selectedBuilding.type)}</p>
+                </div>
+              )}
+
+              {gameState.phase === "battle" && gameState.gameMode === "4player" && (
+                <div className="bg-red-900/50 rounded p-3 text-sm border border-red-600">
+                  <p className="text-red-400 font-bold">🔥 4-PLAYER CORNER CONQUEST:</p>
+                  <ul className="text-gray-300 text-xs mt-1 space-y-1">
+                    <li>• Each player starts in a corner</li>
+                    <li>• Defeat enemies to claim their territory</li>
+                    <li>• Units only target ALIVE players</li>
+                    <li>• Last corner standing wins!</li>
+                  </ul>
+                </div>
+              )}
+
+              {gameState.spectators > 0 && (
+                <div className="text-center">
+                  <Badge className="px-3 py-1 bg-purple-500 text-sm">
+                    <Users className="w-3 h-3 mr-1" />
+                    {gameState.spectators} watching
+                  </Badge>
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
       </div>
     </div>
   )
