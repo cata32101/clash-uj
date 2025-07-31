@@ -7,7 +7,6 @@ import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import {
   Zap,
-  Target,
   Crown,
   Coins,
   Timer,
@@ -19,18 +18,25 @@ import {
   Pause,
   ChevronLeft,
   ChevronRight,
+  Swords,
 } from "lucide-react"
 
-// Enhanced game constants
-const GRID_SIZE = 20
-const PREP_TIME = 45
-const BATTLE_TIME = 180
+// Enhanced game constants for 4-player
+const GRID_SIZE = 24
+const PREP_TIME = 60
+const BATTLE_TIME = 240
 const MANA_MAX = 10
 const MANA_REGEN_RATE = 1000
-const ENEMY_TOWER_X = 10
-const PLAYER_TOWER_X = 10
 
-// Simplified unit types with better balance
+// Player positions for 4-player mode
+const PLAYER_POSITIONS = {
+  player1: { towerX: 12, towerY: 23, color: "#22C55E", name: "YOU", icon: "👑" },
+  player2: { towerX: 23, towerY: 12, color: "#EF4444", name: "EAST", icon: "🔴" },
+  player3: { towerX: 12, towerY: 0, color: "#3B82F6", name: "NORTH", icon: "🔵" },
+  player4: { towerX: 0, towerY: 12, color: "#F59E0B", name: "WEST", icon: "🟡" },
+}
+
+// Enhanced unit types
 const UNITS = {
   knight: {
     name: "Knight",
@@ -154,14 +160,14 @@ const BUILDINGS = {
   wall: {
     name: "Wall",
     cost: 1,
-    hp: 150,
+    hp: 100, // Reduced HP to make walls less OP
     damage: 0,
     range: 0,
     icon: "🧱",
     color: "#6B7280",
     attackSpeed: 0,
     minRange: 0,
-    description: "Blocks enemy movement",
+    description: "Blocks movement - Can be destroyed!",
   },
   cannon: {
     name: "Cannon",
@@ -189,10 +195,12 @@ const BUILDINGS = {
   },
 }
 
+type PlayerType = "player1" | "player2" | "player3" | "player4"
+
 interface Unit {
   id: string
   type: keyof typeof UNITS
-  owner: "player" | "enemy"
+  owner: PlayerType
   x: number
   y: number
   hp: number
@@ -206,13 +214,12 @@ interface Unit {
   isSelected: boolean
   targetX?: number
   targetY?: number
-  pathfindingTarget?: { x: number; y: number }
 }
 
 interface Building {
   id: string
   type: keyof typeof BUILDINGS
-  owner: "player" | "enemy"
+  owner: PlayerType
   x: number
   y: number
   hp: number
@@ -240,6 +247,7 @@ interface Projectile {
   speed: number
   velocity: { x: number; y: number }
   trail: { x: number; y: number }[]
+  owner: PlayerType
 }
 
 interface DamageNumber {
@@ -265,27 +273,30 @@ interface Explosion {
 interface Tile {
   x: number
   y: number
-  owner: "player" | "enemy" | "neutral"
+  owner: PlayerType | "neutral"
   building?: Building
   units: Unit[]
   isHighlighted?: boolean
+}
+
+interface PlayerState {
+  hp: number
+  mana: number
+  isAlive: boolean
+  isAI: boolean
 }
 
 interface GameState {
   credits: number
   phase: "menu" | "prep" | "battle" | "result"
   phaseTime: number
-  playerMana: number
-  enemyMana: number
-  playerTowerHp: number
-  enemyTowerHp: number
+  players: Record<PlayerType, PlayerState>
   grid: Tile[][]
   selectedCard: string | null
   selectedUnit: Unit | null
   hoveredTile: { x: number; y: number } | null
   deck: string[]
-  enemyDeck: string[]
-  winner: string | null
+  winner: PlayerType | "tie" | null
   wager: number
   spectators: number
   projectiles: Projectile[]
@@ -296,24 +307,26 @@ interface GameState {
   isPaused: boolean
   gameSpeed: number
   cardScrollIndex: number
-  showCardDetails: boolean
+  gameMode: "2player" | "4player"
+  alivePlayers: PlayerType[]
 }
 
-export default function ProductionBattleArena() {
+export default function FourPlayerBattleArena() {
   const [gameState, setGameState] = useState<GameState>({
     credits: 100,
     phase: "menu",
     phaseTime: 0,
-    playerMana: MANA_MAX,
-    enemyMana: MANA_MAX,
-    playerTowerHp: 300,
-    enemyTowerHp: 300,
+    players: {
+      player1: { hp: 300, mana: MANA_MAX, isAlive: true, isAI: false },
+      player2: { hp: 300, mana: MANA_MAX, isAlive: true, isAI: true },
+      player3: { hp: 300, mana: MANA_MAX, isAlive: true, isAI: true },
+      player4: { hp: 300, mana: MANA_MAX, isAlive: true, isAI: true },
+    },
     grid: [],
     selectedCard: null,
     selectedUnit: null,
     hoveredTile: null,
     deck: ["knight", "archer", "wizard", "fireball", "tower", "wall", "cannon", "heal"],
-    enemyDeck: ["knight", "archer", "giant", "fireball", "lightning", "tesla", "freeze"],
     winner: null,
     wager: 25,
     spectators: 0,
@@ -325,94 +338,133 @@ export default function ProductionBattleArena() {
     isPaused: false,
     gameSpeed: 1.0,
     cardScrollIndex: 0,
-    showCardDetails: false,
+    gameMode: "4player",
+    alivePlayers: ["player1", "player2", "player3", "player4"],
   })
 
   const gameLoopRef = useRef<number>()
   const manaTimerRef = useRef<NodeJS.Timeout>()
 
-  const initializeGrid = useCallback((): Tile[][] => {
+  const initializeGrid = useCallback((mode: "2player" | "4player"): Tile[][] => {
     const grid: Tile[][] = []
 
     for (let y = 0; y < GRID_SIZE; y++) {
       grid[y] = []
       for (let x = 0; x < GRID_SIZE; x++) {
-        let owner: "player" | "enemy" | "neutral" = "neutral"
+        let owner: PlayerType | "neutral" = "neutral"
 
-        if (y >= GRID_SIZE - 6) owner = "player"
-        if (y < 6) owner = "enemy"
+        if (mode === "4player") {
+          // 4-player territories
+          const centerX = GRID_SIZE / 2
+          const centerY = GRID_SIZE / 2
+          const territorySize = 6
+
+          if (y >= GRID_SIZE - territorySize && Math.abs(x - centerX) < territorySize) owner = "player1"
+          else if (x >= GRID_SIZE - territorySize && Math.abs(y - centerY) < territorySize) owner = "player2"
+          else if (y < territorySize && Math.abs(x - centerX) < territorySize) owner = "player3"
+          else if (x < territorySize && Math.abs(y - centerY) < territorySize) owner = "player4"
+        } else {
+          // 2-player mode
+          if (y >= GRID_SIZE - 6) owner = "player1"
+          if (y < 6) owner = "player2"
+        }
 
         grid[y][x] = { x, y, owner, units: [] }
       }
     }
 
-    // Main towers
-    grid[0][ENEMY_TOWER_X] = {
-      ...grid[0][ENEMY_TOWER_X],
-      building: {
-        id: "enemy-main-tower",
-        type: "tower",
-        owner: "enemy",
-        x: ENEMY_TOWER_X,
-        y: 0,
-        hp: 300,
-        maxHp: 300,
-        cooldown: 0,
-        isMainTower: true,
-        aimAngle: 0,
-      },
-    }
+    // Place main towers
+    if (mode === "4player") {
+      Object.entries(PLAYER_POSITIONS).forEach(([player, pos]) => {
+        grid[pos.towerY][pos.towerX] = {
+          ...grid[pos.towerY][pos.towerX],
+          building: {
+            id: `${player}-main-tower`,
+            type: "tower",
+            owner: player as PlayerType,
+            x: pos.towerX,
+            y: pos.towerY,
+            hp: 300,
+            maxHp: 300,
+            cooldown: 0,
+            isMainTower: true,
+            aimAngle: 0,
+          },
+        }
+      })
+    } else {
+      // 2-player towers
+      grid[0][12] = {
+        ...grid[0][12],
+        building: {
+          id: "player2-main-tower",
+          type: "tower",
+          owner: "player2",
+          x: 12,
+          y: 0,
+          hp: 300,
+          maxHp: 300,
+          cooldown: 0,
+          isMainTower: true,
+          aimAngle: 0,
+        },
+      }
 
-    grid[GRID_SIZE - 1][PLAYER_TOWER_X] = {
-      ...grid[GRID_SIZE - 1][PLAYER_TOWER_X],
-      building: {
-        id: "player-main-tower",
-        type: "tower",
-        owner: "player",
-        x: PLAYER_TOWER_X,
-        y: GRID_SIZE - 1,
-        hp: 300,
-        maxHp: 300,
-        cooldown: 0,
-        isMainTower: true,
-        aimAngle: 0,
-      },
+      grid[GRID_SIZE - 1][12] = {
+        ...grid[GRID_SIZE - 1][12],
+        building: {
+          id: "player1-main-tower",
+          type: "tower",
+          owner: "player1",
+          x: 12,
+          y: GRID_SIZE - 1,
+          hp: 300,
+          maxHp: 300,
+          cooldown: 0,
+          isMainTower: true,
+          aimAngle: 0,
+        },
+      }
     }
 
     return grid
   }, [])
 
-  const startGame = () => {
+  const startGame = (mode: "2player" | "4player") => {
     if (gameState.credits < gameState.wager) return
+
+    const initialPlayers: Record<PlayerType, PlayerState> = {
+      player1: { hp: 300, mana: MANA_MAX, isAlive: true, isAI: false },
+      player2: { hp: 300, mana: MANA_MAX, isAlive: true, isAI: true },
+      player3: { hp: 300, mana: MANA_MAX, isAlive: mode === "4player", isAI: true },
+      player4: { hp: 300, mana: MANA_MAX, isAlive: mode === "4player", isAI: true },
+    }
 
     setGameState((prev) => ({
       ...prev,
       credits: prev.credits - prev.wager,
       phase: "prep",
       phaseTime: PREP_TIME,
-      playerMana: MANA_MAX,
-      enemyMana: MANA_MAX,
-      playerTowerHp: 300,
-      enemyTowerHp: 300,
-      grid: initializeGrid(),
+      players: initialPlayers,
+      grid: initializeGrid(mode),
       selectedCard: null,
       selectedUnit: null,
       hoveredTile: null,
       winner: null,
-      spectators: Math.floor(Math.random() * 400) + 150,
+      spectators: Math.floor(Math.random() * 800) + 200,
       projectiles: [],
       damageNumbers: [],
       explosions: [],
       selectedBuilding: null,
       isPaused: false,
       cardScrollIndex: 0,
+      gameMode: mode,
+      alivePlayers: mode === "4player" ? ["player1", "player2", "player3", "player4"] : ["player1", "player2"],
     }))
   }
 
-  // Enhanced pathfinding function
+  // Enhanced pathfinding for 4-player
   const getNextMovePosition = (unit: Unit, currentX: number, currentY: number) => {
-    const unitStats = UNITS[unit.type]
-
     // If unit has a manual target, move towards it
     if (unit.targetX !== undefined && unit.targetY !== undefined) {
       const dx = unit.targetX - currentX
@@ -425,32 +477,26 @@ export default function ProductionBattleArena() {
       }
     }
 
-    // Smart pathfinding towards enemy tower
-    if (unit.owner === "player") {
-      // Player units move towards enemy tower
-      if (currentY > 0) {
-        // Move north first
-        return { x: currentX, y: currentY - 1 }
-      } else {
-        // Reached enemy territory, move towards enemy tower
-        if (currentX < ENEMY_TOWER_X) {
-          return { x: currentX + 1, y: currentY }
-        } else if (currentX > ENEMY_TOWER_X) {
-          return { x: currentX - 1, y: currentY }
+    // Find nearest enemy tower
+    let nearestTower: { x: number; y: number; distance: number } | null = null
+
+    Object.entries(PLAYER_POSITIONS).forEach(([player, pos]) => {
+      if (player !== unit.owner && gameState.players[player as PlayerType].isAlive) {
+        const distance = Math.sqrt(Math.pow(pos.towerX - currentX, 2) + Math.pow(pos.towerY - currentY, 2))
+        if (!nearestTower || distance < nearestTower.distance) {
+          nearestTower = { x: pos.towerX, y: pos.towerY, distance }
         }
       }
-    } else {
-      // Enemy units move towards player tower
-      if (currentY < GRID_SIZE - 1) {
-        // Move south first
-        return { x: currentX, y: currentY + 1 }
-      } else {
-        // Reached player territory, move towards player tower
-        if (currentX < PLAYER_TOWER_X) {
-          return { x: currentX + 1, y: currentY }
-        } else if (currentX > PLAYER_TOWER_X) {
-          return { x: currentX - 1, y: currentY }
-        }
+    })
+
+    if (nearestTower) {
+      const dx = nearestTower.x - currentX
+      const dy = nearestTower.y - currentY
+
+      if (Math.abs(dx) > Math.abs(dy)) {
+        return { x: dx > 0 ? currentX + 1 : currentX - 1, y: currentY }
+      } else if (dy !== 0) {
+        return { x: currentX, y: dy > 0 ? currentY + 1 : currentY - 1 }
       }
     }
 
@@ -467,9 +513,23 @@ export default function ProductionBattleArena() {
           if (prev.phase === "prep") {
             return { ...prev, phase: "battle", phaseTime: BATTLE_TIME }
           } else {
-            let winner = "tie"
-            if (prev.playerTowerHp > prev.enemyTowerHp) winner = "player"
-            else if (prev.enemyTowerHp > prev.playerTowerHp) winner = "enemy"
+            // Determine winner based on remaining HP
+            let winner: PlayerType | "tie" | null = "tie"
+            let maxHp = 0
+            let playersWithMaxHp = 0
+
+            prev.alivePlayers.forEach((player) => {
+              const hp = prev.players[player].hp
+              if (hp > maxHp) {
+                maxHp = hp
+                winner = player
+                playersWithMaxHp = 1
+              } else if (hp === maxHp) {
+                playersWithMaxHp++
+                if (playersWithMaxHp > 1) winner = "tie"
+              }
+            })
+
             return { ...prev, phase: "result", winner, phaseTime: 0 }
           }
         }
@@ -487,8 +547,12 @@ export default function ProductionBattleArena() {
     manaTimerRef.current = setInterval(() => {
       setGameState((prev) => ({
         ...prev,
-        playerMana: Math.min(MANA_MAX, prev.playerMana + 1),
-        enemyMana: Math.min(MANA_MAX, prev.enemyMana + 1),
+        players: Object.fromEntries(
+          Object.entries(prev.players).map(([player, state]) => [
+            player,
+            { ...state, mana: Math.min(MANA_MAX, state.mana + 1) },
+          ]),
+        ) as Record<PlayerType, PlayerState>,
       }))
     }, MANA_REGEN_RATE)
 
@@ -497,7 +561,7 @@ export default function ProductionBattleArena() {
     }
   }, [gameState.phase, gameState.isPaused])
 
-  // Enhanced game loop with smart pathfinding
+  // Enhanced 4-player game loop
   useEffect(() => {
     if (gameState.phase !== "battle" || gameState.isPaused) return
 
@@ -511,8 +575,7 @@ export default function ProductionBattleArena() {
           })),
         )
 
-        let newPlayerTowerHp = prev.playerTowerHp
-        let newEnemyTowerHp = prev.enemyTowerHp
+        const newPlayers = { ...prev.players }
         const newProjectiles = [...prev.projectiles]
         const newDamageNumbers = [...prev.damageNumbers]
         const newExplosions = [...prev.explosions]
@@ -559,12 +622,9 @@ export default function ProductionBattleArena() {
                 color: projectile.color,
               })
 
-              // Apply damage
+              // Apply damage to units
               targetTile.units.forEach((unit) => {
-                if (
-                  (projectile.type.includes("player") && unit.owner === "enemy") ||
-                  (projectile.type.includes("enemy") && unit.owner === "player")
-                ) {
+                if (unit.owner !== projectile.owner) {
                   unit.hp = Math.max(0, unit.hp - projectile.damage)
                   unit.lastDamage = projectile.damage
 
@@ -579,31 +639,23 @@ export default function ProductionBattleArena() {
                 }
               })
 
-              if (targetTile.building) {
+              // Apply damage to buildings (INCLUDING WALLS!)
+              if (targetTile.building && targetTile.building.owner !== projectile.owner) {
                 const building = targetTile.building
-                if (
-                  (projectile.type.includes("player") && building.owner === "enemy") ||
-                  (projectile.type.includes("enemy") && building.owner === "player")
-                ) {
-                  building.hp -= projectile.damage
+                building.hp -= projectile.damage
 
-                  if (building.isMainTower) {
-                    if (building.owner === "player") {
-                      newPlayerTowerHp = building.hp
-                    } else {
-                      newEnemyTowerHp = building.hp
-                    }
-                  }
-
-                  newDamageNumbers.push({
-                    id: `damage-${Date.now()}-${Math.random()}`,
-                    x: hitX,
-                    y: hitY,
-                    damage: projectile.damage,
-                    opacity: 1,
-                    velocity: { x: 0, y: -0.04 },
-                  })
+                if (building.isMainTower) {
+                  newPlayers[building.owner].hp = building.hp
                 }
+
+                newDamageNumbers.push({
+                  id: `damage-${Date.now()}-${Math.random()}`,
+                  x: hitX,
+                  y: hitY,
+                  damage: projectile.damage,
+                  opacity: 1,
+                  velocity: { x: 0, y: -0.04 },
+                })
               }
 
               // Splash damage for cannons
@@ -621,13 +673,14 @@ export default function ProductionBattleArena() {
                     ) {
                       const splashTile = newGrid[splashY][splashX]
                       splashTile.units.forEach((unit) => {
-                        if (
-                          (projectile.type.includes("player") && unit.owner === "enemy") ||
-                          (projectile.type.includes("enemy") && unit.owner === "player")
-                        ) {
+                        if (unit.owner !== projectile.owner) {
                           unit.hp = Math.max(0, unit.hp - Math.floor(projectile.damage * 0.5))
                         }
                       })
+                      // Splash damage to buildings too!
+                      if (splashTile.building && splashTile.building.owner !== projectile.owner) {
+                        splashTile.building.hp -= Math.floor(projectile.damage * 0.3)
+                      }
                     }
                   }
                 }
@@ -662,7 +715,7 @@ export default function ProductionBattleArena() {
           }
         }
 
-        // Enhanced unit AI with smart pathfinding
+        // Enhanced unit AI for 4-player
         for (let y = 0; y < GRID_SIZE; y++) {
           for (let x = 0; x < GRID_SIZE; x++) {
             const tile = newGrid[y][x]
@@ -720,7 +773,7 @@ export default function ProductionBattleArena() {
                 }
               }
 
-              // Combat logic
+              // Combat logic - attack any enemy
               let foundTarget = false
               for (let dy = -unitStats.range; dy <= unitStats.range; dy++) {
                 for (let dx = -unitStats.range; dx <= unitStats.range; dx++) {
@@ -754,6 +807,7 @@ export default function ProductionBattleArena() {
                             y: (checkY - y) * 0.1,
                           },
                           trail: [],
+                          owner: unit.owner,
                         })
                       } else {
                         // Melee attack
@@ -766,7 +820,7 @@ export default function ProductionBattleArena() {
                       break
                     }
 
-                    // Attack enemy buildings
+                    // Attack enemy buildings (INCLUDING WALLS!)
                     if (checkTile.building && checkTile.building.owner !== unit.owner && unitStats.damage > 0) {
                       const building = checkTile.building
 
@@ -789,16 +843,23 @@ export default function ProductionBattleArena() {
                             y: (checkY - y) * 0.08,
                           },
                           trail: [],
+                          owner: unit.owner,
                         })
                       } else {
+                        // Melee attack on buildings (including walls!)
                         building.hp -= unitStats.damage
                         if (building.isMainTower) {
-                          if (building.owner === "player") {
-                            newPlayerTowerHp = building.hp
-                          } else {
-                            newEnemyTowerHp = building.hp
-                          }
+                          newPlayers[building.owner].hp = building.hp
                         }
+
+                        newDamageNumbers.push({
+                          id: `melee-damage-${Date.now()}-${Math.random()}`,
+                          x: checkX,
+                          y: checkY,
+                          damage: unitStats.damage,
+                          opacity: 1,
+                          velocity: { x: 0, y: -0.03 },
+                        })
                       }
 
                       unit.cooldown = 20
@@ -810,7 +871,7 @@ export default function ProductionBattleArena() {
                 if (foundTarget) break
               }
 
-              // Enhanced movement with smart pathfinding
+              // Enhanced movement with 4-player pathfinding
               if (!foundTarget && unit.moveCooldown === 0) {
                 const nextPos = getNextMovePosition(unit, x, y)
 
@@ -820,7 +881,8 @@ export default function ProductionBattleArena() {
                     nextPos.x < GRID_SIZE &&
                     nextPos.y >= 0 &&
                     nextPos.y < GRID_SIZE &&
-                    newGrid[nextPos.y][nextPos.x].units.length < 3
+                    newGrid[nextPos.y][nextPos.x].units.length < 3 &&
+                    !newGrid[nextPos.y][nextPos.x].building // Can't move through buildings
                   ) {
                     newGrid[nextPos.y][nextPos.x].units.push(unit)
                     tile.units = tile.units.filter((u) => u.id !== unit.id)
@@ -902,6 +964,7 @@ export default function ProductionBattleArena() {
                         y: (bestTarget.y - y) * (building.type === "tesla" ? 0.2 : 0.06),
                       },
                       trail: [],
+                      owner: building.owner,
                     })
 
                     building.cooldown = buildingStats.attackSpeed
@@ -930,98 +993,80 @@ export default function ProductionBattleArena() {
           }
         }
 
-        // Enhanced AI - 8% spawn rate
-        if (Math.random() < 0.08 && prev.enemyMana >= 2) {
-          const availableCards = prev.enemyDeck.filter((card) => {
-            const cost =
-              UNITS[card as keyof typeof UNITS]?.cost ||
-              SPELLS[card as keyof typeof SPELLS]?.cost ||
-              BUILDINGS[card as keyof typeof BUILDINGS]?.cost ||
-              0
-            return cost <= prev.enemyMana
-          })
+        // Enhanced AI for multiple players
+        prev.alivePlayers.forEach((player) => {
+          if (newPlayers[player].isAI && Math.random() < 0.06 && newPlayers[player].mana >= 2) {
+            const availableCards = prev.deck.filter((card) => {
+              const cost =
+                UNITS[card as keyof typeof UNITS]?.cost ||
+                SPELLS[card as keyof typeof SPELLS]?.cost ||
+                BUILDINGS[card as keyof typeof BUILDINGS]?.cost ||
+                0
+              return cost <= newPlayers[player].mana
+            })
 
-          if (availableCards.length > 0) {
-            const selectedCard = availableCards[Math.floor(Math.random() * availableCards.length)]
-            const cost =
-              UNITS[selectedCard as keyof typeof UNITS]?.cost ||
-              SPELLS[selectedCard as keyof typeof SPELLS]?.cost ||
-              BUILDINGS[selectedCard as keyof typeof BUILDINGS]?.cost ||
-              0
+            if (availableCards.length > 0) {
+              const selectedCard = availableCards[Math.floor(Math.random() * availableCards.length)]
+              const cost =
+                UNITS[selectedCard as keyof typeof UNITS]?.cost ||
+                SPELLS[selectedCard as keyof typeof SPELLS]?.cost ||
+                BUILDINGS[selectedCard as keyof typeof BUILDINGS]?.cost ||
+                0
 
-            const deployX = Math.floor(Math.random() * GRID_SIZE)
-            const deployY = Math.floor(Math.random() * 6)
+              // Find valid deployment area for this player
+              const playerPos = PLAYER_POSITIONS[player]
+              const deployX = Math.max(0, Math.min(GRID_SIZE - 1, playerPos.towerX + Math.floor(Math.random() * 6) - 3))
+              const deployY = Math.max(0, Math.min(GRID_SIZE - 1, playerPos.towerY + Math.floor(Math.random() * 6) - 3))
 
-            if (UNITS[selectedCard as keyof typeof UNITS]) {
-              const unitStats = UNITS[selectedCard as keyof typeof UNITS]
-              const newUnit: Unit = {
-                id: `enemy-${Date.now()}-${Math.random()}`,
-                type: selectedCard as keyof typeof UNITS,
-                owner: "enemy",
-                x: deployX,
-                y: deployY,
-                hp: unitStats.hp,
-                maxHp: unitStats.hp,
-                cooldown: 0,
-                frozen: 0,
-                healCooldown: 0,
-                moveCooldown: 0,
-                isMoving: false,
-                isSelected: false,
+              if (UNITS[selectedCard as keyof typeof UNITS] && newGrid[deployY][deployX].owner === player) {
+                const unitStats = UNITS[selectedCard as keyof typeof UNITS]
+                const newUnit: Unit = {
+                  id: `${player}-${Date.now()}-${Math.random()}`,
+                  type: selectedCard as keyof typeof UNITS,
+                  owner: player,
+                  x: deployX,
+                  y: deployY,
+                  hp: unitStats.hp,
+                  maxHp: unitStats.hp,
+                  cooldown: 0,
+                  frozen: 0,
+                  healCooldown: 0,
+                  moveCooldown: 0,
+                  isMoving: false,
+                  isSelected: false,
+                }
+                newGrid[deployY][deployX].units.push(newUnit)
+                newPlayers[player].mana -= cost
               }
-              newGrid[deployY][deployX].units.push(newUnit)
-            }
-
-            return {
-              ...prev,
-              grid: newGrid,
-              enemyMana: prev.enemyMana - cost,
-              playerTowerHp: newPlayerTowerHp,
-              enemyTowerHp: newEnemyTowerHp,
-              projectiles: newProjectiles,
-              damageNumbers: newDamageNumbers,
-              explosions: newExplosions,
             }
           }
-        }
+        })
 
-        // Check win conditions
-        if (newPlayerTowerHp <= 0) {
+        // Update alive players and check win conditions
+        const newAlivePlayers = prev.alivePlayers.filter((player) => newPlayers[player].hp > 0)
+
+        if (newAlivePlayers.length <= 1) {
           return {
             ...prev,
             grid: newGrid,
-            playerTowerHp: 0,
-            enemyTowerHp: newEnemyTowerHp,
+            players: newPlayers,
             projectiles: newProjectiles,
             damageNumbers: newDamageNumbers,
             explosions: newExplosions,
             phase: "result",
-            winner: "enemy",
-          }
-        }
-
-        if (newEnemyTowerHp <= 0) {
-          return {
-            ...prev,
-            grid: newGrid,
-            playerTowerHp: newPlayerTowerHp,
-            enemyTowerHp: 0,
-            projectiles: newProjectiles,
-            damageNumbers: newDamageNumbers,
-            explosions: newExplosions,
-            phase: "result",
-            winner: "player",
+            winner: newAlivePlayers.length === 1 ? newAlivePlayers[0] : "tie",
+            alivePlayers: newAlivePlayers,
           }
         }
 
         return {
           ...prev,
           grid: newGrid,
-          playerTowerHp: newPlayerTowerHp,
-          enemyTowerHp: newEnemyTowerHp,
+          players: newPlayers,
           projectiles: newProjectiles,
           damageNumbers: newDamageNumbers,
           explosions: newExplosions,
+          alivePlayers: newAlivePlayers,
         }
       })
 
@@ -1044,7 +1089,7 @@ export default function ProductionBattleArena() {
     let cost = 0
     let canDeploy = false
 
-    canDeploy = gameState.grid[y][x].owner === "player"
+    canDeploy = gameState.grid[y][x].owner === "player1"
 
     if (!canDeploy) return
 
@@ -1052,17 +1097,18 @@ export default function ProductionBattleArena() {
       const newGrid = prev.grid.map((row) => row.map((tile) => ({ ...tile, units: [...tile.units] })))
       const newDamageNumbers = [...prev.damageNumbers]
       const newExplosions = [...prev.explosions]
+      const newPlayers = { ...prev.players }
 
       // Deploy unit
       if (UNITS[card as keyof typeof UNITS]) {
         const unitStats = UNITS[card as keyof typeof UNITS]
         cost = unitStats.cost
 
-        if (prev.playerMana >= cost) {
+        if (prev.players.player1.mana >= cost) {
           const newUnit: Unit = {
-            id: `player-${Date.now()}-${Math.random()}`,
+            id: `player1-${Date.now()}-${Math.random()}`,
             type: card as keyof typeof UNITS,
-            owner: "player",
+            owner: "player1",
             x,
             y,
             hp: unitStats.hp,
@@ -1085,11 +1131,11 @@ export default function ProductionBattleArena() {
         const buildingStats = BUILDINGS[card as keyof typeof BUILDINGS]
         cost = buildingStats.cost
 
-        if (prev.playerMana >= cost && !newGrid[y][x].building) {
+        if (prev.players.player1.mana >= cost && !newGrid[y][x].building) {
           newGrid[y][x].building = {
-            id: `player-building-${Date.now()}`,
+            id: `player1-building-${Date.now()}`,
             type: card as keyof typeof BUILDINGS,
-            owner: "player",
+            owner: "player1",
             x,
             y,
             hp: buildingStats.hp,
@@ -1107,7 +1153,7 @@ export default function ProductionBattleArena() {
         const spellStats = SPELLS[card as keyof typeof SPELLS]
         cost = spellStats.cost
 
-        if (prev.playerMana >= cost) {
+        if (prev.players.player1.mana >= cost) {
           newExplosions.push({
             id: `spell-explosion-${Date.now()}`,
             x: x,
@@ -1127,7 +1173,7 @@ export default function ProductionBattleArena() {
 
                 if (card === "fireball" || card === "lightning") {
                   targetTile.units.forEach((unit) => {
-                    if (unit.owner !== "player") {
+                    if (unit.owner !== "player1") {
                       unit.hp = Math.max(0, unit.hp - (spellStats.damage || 0))
                       newDamageNumbers.push({
                         id: `spell-damage-${Date.now()}-${Math.random()}`,
@@ -1140,18 +1186,18 @@ export default function ProductionBattleArena() {
                     }
                   })
 
-                  if (targetTile.building && targetTile.building.owner !== "player") {
+                  if (targetTile.building && targetTile.building.owner !== "player1") {
                     targetTile.building.hp -= spellStats.damage || 0
                   }
                 } else if (card === "freeze") {
                   targetTile.units.forEach((unit) => {
-                    if (unit.owner !== "player") {
+                    if (unit.owner !== "player1") {
                       unit.frozen = spellStats.duration || 0
                     }
                   })
                 } else if (card === "heal") {
                   targetTile.units.forEach((unit) => {
-                    if (unit.owner === "player") {
+                    if (unit.owner === "player1") {
                       unit.hp = Math.min(unit.maxHp, unit.hp + (spellStats.healing || 0))
                       newDamageNumbers.push({
                         id: `heal-${Date.now()}-${Math.random()}`,
@@ -1173,10 +1219,12 @@ export default function ProductionBattleArena() {
         }
       }
 
+      newPlayers.player1.mana -= cost
+
       return {
         ...prev,
         grid: newGrid,
-        playerMana: prev.playerMana - cost,
+        players: newPlayers,
         selectedCard: null,
         damageNumbers: newDamageNumbers,
         explosions: newExplosions,
@@ -1188,7 +1236,7 @@ export default function ProductionBattleArena() {
     const tile = gameState.grid[y][x]
 
     // If we have a selected unit and clicked on a valid tile, set target
-    if (gameState.selectedUnit && tile.owner !== "enemy") {
+    if (gameState.selectedUnit && tile.owner !== "player2" && tile.owner !== "player3" && tile.owner !== "player4") {
       setGameState((prev) => {
         const newGrid = prev.grid.map((row) =>
           row.map((tile) => ({
@@ -1209,7 +1257,7 @@ export default function ProductionBattleArena() {
     }
 
     // Select unit if clicked
-    if (tile.units.length > 0 && tile.units[0].owner === "player") {
+    if (tile.units.length > 0 && tile.units[0].owner === "player1") {
       setGameState((prev) => ({
         ...prev,
         selectedUnit: prev.selectedUnit?.id === tile.units[0].id ? null : tile.units[0],
@@ -1239,8 +1287,10 @@ export default function ProductionBattleArena() {
   }
 
   const getTileColor = (tile: Tile) => {
-    if (tile.owner === "player") return "rgba(34, 197, 94, 0.4)"
-    if (tile.owner === "enemy") return "rgba(239, 68, 68, 0.4)"
+    if (tile.owner === "player1") return "rgba(34, 197, 94, 0.4)"
+    if (tile.owner === "player2") return "rgba(239, 68, 68, 0.4)"
+    if (tile.owner === "player3") return "rgba(59, 130, 246, 0.4)"
+    if (tile.owner === "player4") return "rgba(245, 158, 11, 0.4)"
     return "rgba(107, 114, 128, 0.15)"
   }
 
@@ -1295,9 +1345,9 @@ export default function ProductionBattleArena() {
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-blue-900 text-white flex flex-col items-center justify-center p-4">
         <div className="text-center space-y-8 max-w-4xl">
           <h1 className="text-4xl md:text-8xl font-bold bg-gradient-to-r from-orange-400 via-red-500 to-purple-600 bg-clip-text text-transparent animate-pulse">
-            TACTICAL ARENA
+            4-PLAYER ARENA
           </h1>
-          <p className="text-lg md:text-2xl text-gray-300">Smart Pathfinding • Production Polish • Tactical Control</p>
+          <p className="text-lg md:text-2xl text-gray-300">Epic Battles • Walls Can Be Destroyed • 4-Way Combat</p>
 
           <div className="flex justify-center space-x-4 md:space-x-8">
             <Badge className="text-lg md:text-2xl px-4 md:px-6 py-2 md:py-3 bg-green-500/20 border-green-500">
@@ -1306,16 +1356,44 @@ export default function ProductionBattleArena() {
             </Badge>
             <Badge className="text-lg md:text-2xl px-4 md:px-6 py-2 md:py-3 bg-purple-500/20 border-purple-500">
               <Users className="w-4 md:w-6 h-4 md:h-6 mr-2" />
-              Online: 3,847
+              Online: 4,127
             </Badge>
           </div>
 
           <Card className="p-6 md:p-8 bg-gray-800/50 border-gray-600">
-            <h3 className="text-2xl md:text-3xl font-bold mb-6 text-yellow-400">PRODUCTION WARFARE</h3>
+            <h3 className="text-2xl md:text-3xl font-bold mb-6 text-yellow-400">CHOOSE YOUR BATTLE</h3>
 
-            <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <h4 className="text-xl font-bold text-blue-400">🎯 2-PLAYER DUEL</h4>
+                <p className="text-sm text-gray-300">Classic 1v1 tactical combat</p>
+                <Button
+                  onClick={() => startGame("2player")}
+                  disabled={gameState.credits < gameState.wager}
+                  className="w-full text-lg py-3 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-400 hover:to-cyan-400 font-bold"
+                >
+                  <Swords className="w-5 h-5 mr-2" />
+                  DUEL MODE
+                </Button>
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="text-xl font-bold text-red-400">⚔️ 4-PLAYER CHAOS</h4>
+                <p className="text-sm text-gray-300">Epic 4-way battle royale</p>
+                <Button
+                  onClick={() => startGame("4player")}
+                  disabled={gameState.credits < gameState.wager}
+                  className="w-full text-lg py-3 bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-400 hover:to-orange-400 font-bold"
+                >
+                  <Crown className="w-5 h-5 mr-2" />
+                  CHAOS MODE
+                </Button>
+              </div>
+            </div>
+
+            <div className="mt-6 space-y-4">
               <div>
-                <label className="text-lg md:text-xl font-semibold mb-3 block">Entry Fee:</label>
+                <label className="text-lg font-semibold mb-3 block">Entry Fee:</label>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {[10, 25, 50, 100].map((amount) => (
                     <Button
@@ -1337,31 +1415,23 @@ export default function ProductionBattleArena() {
                 </p>
                 <p className="text-sm text-gray-400">Platform fee: 10%</p>
               </div>
-
-              <Button
-                onClick={startGame}
-                disabled={gameState.credits < gameState.wager}
-                className="w-full text-xl md:text-3xl py-4 md:py-6 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 font-bold"
-              >
-                🎯 TACTICAL BATTLE
-              </Button>
             </div>
           </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 text-left">
             <div className="space-y-3">
-              <h3 className="text-xl md:text-2xl font-bold text-orange-400">🧠 SMART AI:</h3>
-              <p className="text-sm md:text-base">• Units pathfind to enemy tower</p>
-              <p className="text-sm md:text-base">• Tactical movement patterns</p>
-              <p className="text-sm md:text-base">• Production-level polish</p>
-              <p className="text-sm md:text-base">• Responsive design</p>
+              <h3 className="text-xl md:text-2xl font-bold text-orange-400">🔥 NEW FEATURES:</h3>
+              <p className="text-sm md:text-base">• Walls can now be destroyed!</p>
+              <p className="text-sm md:text-base">• 4-player battle royale mode</p>
+              <p className="text-sm md:text-base">• Enhanced combat mechanics</p>
+              <p className="text-sm md:text-base">• Smart multi-target pathfinding</p>
             </div>
             <div className="space-y-3">
-              <h3 className="text-xl md:text-2xl font-bold text-red-400">⚔️ ENHANCED COMBAT:</h3>
+              <h3 className="text-xl md:text-2xl font-bold text-red-400">⚔️ TACTICAL COMBAT:</h3>
               <p className="text-sm md:text-base">• Click units to command</p>
-              <p className="text-sm md:text-base">• Set tactical targets</p>
-              <p className="text-sm md:text-base">• Pause and strategize</p>
-              <p className="text-sm md:text-base">• Professional UI/UX</p>
+              <p className="text-sm md:text-base">• Set strategic targets</p>
+              <p className="text-sm md:text-base">• Destroy enemy defenses</p>
+              <p className="text-sm md:text-base">• Last player standing wins!</p>
             </div>
           </div>
         </div>
@@ -1371,7 +1441,7 @@ export default function ProductionBattleArena() {
 
   // Result Screen
   if (gameState.phase === "result") {
-    const isWinner = gameState.winner === "player"
+    const isWinner = gameState.winner === "player1"
     const winnings = isWinner ? Math.floor(gameState.wager * 2 * 0.9) : 0
 
     return (
@@ -1380,30 +1450,36 @@ export default function ProductionBattleArena() {
           <h1
             className={`text-4xl md:text-7xl font-bold ${isWinner ? "text-green-400" : gameState.winner === "tie" ? "text-yellow-400" : "text-red-400"}`}
           >
-            {isWinner ? "🏆 VICTORY!" : gameState.winner === "tie" ? "🤝 TIE!" : "💀 DEFEAT!"}
+            {isWinner ? "🏆 VICTORY!" : gameState.winner === "tie" ? "🤝 TIE!" : "💀 DEFEATED!"}
           </h1>
 
           <Card className="p-6 md:p-8 bg-gray-800 border-gray-600">
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-6 md:gap-8">
-                <div className="text-center">
-                  <div className="w-12 md:w-16 h-12 md:h-16 bg-green-500 rounded-full mx-auto mb-2 flex items-center justify-center">
-                    <Crown className="w-6 md:w-8 h-6 md:h-8" />
-                  </div>
-                  <h3 className="text-lg md:text-xl font-bold">YOU</h3>
-                  <Badge className="text-sm md:text-lg px-2 md:px-3 py-1 bg-green-500">
-                    Tower: {gameState.playerTowerHp}HP
-                  </Badge>
-                </div>
-                <div className="text-center">
-                  <div className="w-12 md:w-16 h-12 md:h-16 bg-red-500 rounded-full mx-auto mb-2 flex items-center justify-center">
-                    <Target className="w-6 md:w-8 h-6 md:h-8" />
-                  </div>
-                  <h3 className="text-lg md:text-xl font-bold">ENEMY</h3>
-                  <Badge className="text-sm md:text-lg px-2 md:px-3 py-1 bg-red-500">
-                    Tower: {gameState.enemyTowerHp}HP
-                  </Badge>
-                </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {Object.entries(PLAYER_POSITIONS).map(([player, pos]) => {
+                  const playerState = gameState.players[player as PlayerType]
+                  const isAlive = gameState.alivePlayers.includes(player as PlayerType)
+
+                  return (
+                    <div key={player} className="text-center">
+                      <div
+                        className={`w-12 md:w-16 h-12 md:h-16 rounded-full mx-auto mb-2 flex items-center justify-center ${
+                          isAlive ? "opacity-100" : "opacity-50 grayscale"
+                        }`}
+                        style={{ backgroundColor: pos.color }}
+                      >
+                        <span className="text-lg md:text-2xl">{pos.icon}</span>
+                      </div>
+                      <h3 className="text-sm md:text-lg font-bold">{pos.name}</h3>
+                      <Badge
+                        className={`text-xs md:text-sm px-2 py-1 ${isAlive ? "bg-green-500" : "bg-red-500"}`}
+                        style={{ backgroundColor: isAlive ? pos.color : "#666" }}
+                      >
+                        HP: {Math.max(0, playerState.hp)}
+                      </Badge>
+                    </div>
+                  )
+                })}
               </div>
 
               {isWinner && (
@@ -1436,17 +1512,17 @@ export default function ProductionBattleArena() {
     )
   }
 
-  // Production-Level Game Screen
+  // Enhanced 4-Player Game Screen
   return (
     <div className="w-full h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white overflow-hidden flex flex-col">
-      {/* Enhanced Header */}
+      {/* Enhanced Header for 4-Player */}
       <div className="flex-shrink-0 p-2 md:p-4 space-y-2 md:space-y-4 bg-gray-800/50 backdrop-blur-sm border-b border-gray-700">
         {/* Phase Header */}
         <div className="text-center">
           <h2
             className={`text-xl md:text-3xl font-bold ${gameState.phase === "prep" ? "text-blue-400" : "text-red-400"}`}
           >
-            {gameState.phase === "prep" ? "🏗️ PREPARATION" : "⚔️ TACTICAL BATTLE"}
+            {gameState.phase === "prep" ? "🏗️ PREPARATION" : "⚔️ 4-PLAYER BATTLE"}
           </h2>
           <Badge className="text-sm md:text-xl px-3 md:px-4 py-1 md:py-2 bg-yellow-600 mt-1 md:mt-2">
             <Timer className="w-3 md:w-5 h-3 md:h-5 mr-1 md:mr-2" />
@@ -1454,70 +1530,84 @@ export default function ProductionBattleArena() {
           </Badge>
         </div>
 
-        {/* Game Stats */}
-        <div className="flex justify-between items-center text-xs md:text-base">
-          <div className="flex space-x-1 md:space-x-3">
-            <Badge className="px-2 md:px-3 py-1 md:py-2 bg-green-600">
-              <Crown className="w-3 md:w-4 h-3 md:h-4 mr-1" />
-              <span className="hidden sm:inline">Tower: </span>
-              {gameState.playerTowerHp}HP
-            </Badge>
-            <Badge className="px-2 md:px-3 py-1 md:py-2 bg-blue-600">
-              <Zap className="w-3 md:w-4 h-3 md:h-4 mr-1" />
-              {gameState.playerMana}/{MANA_MAX}
-            </Badge>
-            <Button
-              onClick={() => setGameState((prev) => ({ ...prev, showRanges: !prev.showRanges }))}
-              variant="outline"
-              size="sm"
-              className="px-2 py-1 text-xs"
-            >
-              <Eye className="w-3 h-3 mr-1" />
-              <span className="hidden sm:inline">Ranges</span>
-            </Button>
-            <Button
-              onClick={() => setGameState((prev) => ({ ...prev, isPaused: !prev.isPaused }))}
-              variant="outline"
-              size="sm"
-              className="px-2 py-1 text-xs"
-            >
-              {gameState.isPaused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
-            </Button>
-          </div>
+        {/* 4-Player Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs md:text-sm">
+          {Object.entries(PLAYER_POSITIONS).map(([player, pos]) => {
+            const playerState = gameState.players[player as PlayerType]
+            const isAlive = gameState.alivePlayers.includes(player as PlayerType)
 
-          <div className="flex space-x-1 md:space-x-3">
-            <Badge className="px-2 md:px-3 py-1 md:py-2 bg-red-600">
-              <Target className="w-3 md:w-4 h-3 md:h-4 mr-1" />
-              <span className="hidden sm:inline">Enemy: </span>
-              {gameState.enemyTowerHp}HP
+            return (
+              <div key={player} className={`flex items-center space-x-2 ${!isAlive ? "opacity-50" : ""}`}>
+                <div
+                  className="w-4 h-4 rounded-full flex items-center justify-center"
+                  style={{ backgroundColor: pos.color }}
+                >
+                  <span className="text-xs">{pos.icon}</span>
+                </div>
+                <div>
+                  <div className="font-bold">{pos.name}</div>
+                  <div className="flex space-x-1">
+                    <Badge className="px-1 py-0 text-xs" style={{ backgroundColor: pos.color }}>
+                      HP: {Math.max(0, playerState.hp)}
+                    </Badge>
+                    {player === "player1" && (
+                      <Badge className="px-1 py-0 text-xs bg-blue-600">
+                        <Zap className="w-2 h-2 mr-1" />
+                        {playerState.mana}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Control Buttons */}
+        <div className="flex justify-center space-x-2">
+          <Button
+            onClick={() => setGameState((prev) => ({ ...prev, showRanges: !prev.showRanges }))}
+            variant="outline"
+            size="sm"
+            className="px-2 py-1 text-xs"
+          >
+            <Eye className="w-3 h-3 mr-1" />
+            <span className="hidden sm:inline">Ranges</span>
+          </Button>
+          <Button
+            onClick={() => setGameState((prev) => ({ ...prev, isPaused: !prev.isPaused }))}
+            variant="outline"
+            size="sm"
+            className="px-2 py-1 text-xs"
+          >
+            {gameState.isPaused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
+          </Button>
+          {gameState.spectators > 0 && (
+            <Badge className="px-2 py-1 bg-purple-500 text-xs">
+              <Users className="w-3 h-3 mr-1" />
+              {gameState.spectators}
             </Badge>
-            {gameState.spectators > 0 && (
-              <Badge className="px-2 py-1 bg-purple-500 text-xs">
-                <Users className="w-3 h-3 mr-1" />
-                {gameState.spectators}
-              </Badge>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Enhanced Mana Bar */}
         <div className="relative">
-          <Progress value={(gameState.playerMana / MANA_MAX) * 100} className="h-2 md:h-3 bg-gray-700" />
+          <Progress value={(gameState.players.player1.mana / MANA_MAX) * 100} className="h-2 md:h-3 bg-gray-700" />
           <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white drop-shadow-lg">
-            Mana: {gameState.playerMana}/{MANA_MAX}
+            Mana: {gameState.players.player1.mana}/{MANA_MAX}
           </div>
         </div>
       </div>
 
-      {/* Enhanced Game Grid */}
+      {/* Enhanced 4-Player Game Grid */}
       <div className="flex-1 flex justify-center items-center p-2 md:p-4">
         <div
           className="grid gap-0 border-4 border-gray-600 bg-gray-800 rounded-lg relative shadow-2xl"
           style={{
             gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)`,
             width: "min(90vw, 600px)",
-            height: "min(67.5vw, 450px)",
-            aspectRatio: "4/3",
+            height: "min(90vw, 600px)",
+            aspectRatio: "1/1",
           }}
         >
           {gameState.grid.map((row, y) =>
@@ -1530,7 +1620,7 @@ export default function ProductionBattleArena() {
                   hover:brightness-125 hover:border-yellow-400
                   ${gameState.selectedCard ? "hover:ring-1 hover:ring-yellow-400" : ""}
                   ${gameState.hoveredTile?.x === x && gameState.hoveredTile?.y === y ? "ring-1 ring-blue-400" : ""}
-                  ${gameState.selectedUnit && tile.owner !== "enemy" ? "hover:ring-1 hover:ring-green-400" : ""}
+                  ${gameState.selectedUnit && tile.owner === "player1" ? "hover:ring-1 hover:ring-green-400" : ""}
                 `}
                 style={{ backgroundColor: getTileColor(tile) }}
                 onClick={() => handleTileClick(x, y)}
@@ -1589,8 +1679,7 @@ export default function ProductionBattleArena() {
                         top: "50%",
                         width: "1px",
                         height: `${Math.sqrt(
-                          Math.pow((tile.building.targetX - x) * 30, 2) +
-                            Math.pow((tile.building.targetY - y) * 22.5, 2),
+                          Math.pow((tile.building.targetX - x) * 25, 2) + Math.pow((tile.building.targetY - y) * 25, 2),
                         )}px`,
                         transformOrigin: "top",
                         transform: `rotate(${
@@ -1599,7 +1688,7 @@ export default function ProductionBattleArena() {
                       }}
                     />
                     {tile.building.type === "cannon" && (
-                      <Crosshair className="absolute top-0 right-0 w-2 h-2 text-red-400 animate-pulse" />
+                      <Crosshair className="absolute top-0 right-0 w-1.5 h-1.5 text-red-400 animate-pulse" />
                     )}
                   </>
                 )}
@@ -1608,15 +1697,15 @@ export default function ProductionBattleArena() {
                 {tile.building && (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div
-                      className={`absolute inset-0 rounded ${
-                        tile.building.owner === "player"
-                          ? "bg-green-600 border border-green-400"
-                          : "bg-red-600 border border-red-400"
-                      } opacity-50`}
+                      className={`absolute inset-0 rounded opacity-50`}
+                      style={{
+                        backgroundColor: PLAYER_POSITIONS[tile.building.owner]?.color || "#666",
+                        border: `1px solid ${PLAYER_POSITIONS[tile.building.owner]?.color || "#666"}`,
+                      }}
                     />
 
                     <span
-                      className={`text-sm md:text-lg font-bold relative z-10 ${
+                      className={`text-xs md:text-sm font-bold relative z-10 ${
                         gameState.selectedBuilding?.id === tile.building.id ? "animate-pulse" : ""
                       } ${tile.building.charging && tile.building.charging > 5 ? "animate-bounce" : ""}`}
                       style={{
@@ -1650,22 +1739,22 @@ export default function ProductionBattleArena() {
                       <div key={unit.id} className="relative">
                         {/* Enhanced ownership background */}
                         <div
-                          className={`absolute inset-0 rounded-full ${
-                            unit.owner === "player"
-                              ? "bg-green-500 border border-green-300"
-                              : "bg-red-500 border border-red-300"
-                          } opacity-60 -m-0.5 ${
+                          className={`absolute inset-0 rounded-full opacity-60 -m-0.5 ${
                             gameState.selectedUnit?.id === unit.id ? "ring-2 ring-yellow-400 animate-pulse" : ""
                           }`}
+                          style={{
+                            backgroundColor: PLAYER_POSITIONS[unit.owner]?.color || "#666",
+                            border: `1px solid ${PLAYER_POSITIONS[unit.owner]?.color || "#666"}`,
+                          }}
                         />
 
                         <span
-                          className={`text-xs md:text-base font-bold relative z-10 text-white ${
+                          className={`text-xs md:text-sm font-bold relative z-10 text-white ${
                             unit.lastDamage ? "animate-bounce" : ""
                           } ${unit.isMoving ? "animate-pulse" : ""}`}
                           style={{
                             filter: unit.frozen > 0 ? "brightness(0.5) sepia(1) hue-rotate(180deg)" : "none",
-                            transform: `scale(${UNITS[unit.type].size})`,
+                            transform: `scale(${UNITS[unit.type].size * 0.8})`,
                             textShadow: "1px 1px 2px #000",
                           }}
                         >
@@ -1674,22 +1763,26 @@ export default function ProductionBattleArena() {
 
                         {/* Target indicator */}
                         {unit.targetX !== undefined && unit.targetY !== undefined && (
-                          <div className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-yellow-400 rounded-full animate-ping" />
+                          <div className="absolute -top-1 -right-1 w-1 h-1 bg-yellow-400 rounded-full animate-ping" />
                         )}
 
                         {/* Clearer ownership indicator */}
                         <div
-                          className={`absolute -top-1 -left-1 w-1.5 h-1.5 rounded-full ${
-                            unit.owner === "player" ? "bg-green-300" : "bg-red-300"
-                          }`}
+                          className="absolute -top-1 -left-1 w-1.5 h-1.5 rounded-full"
+                          style={{ backgroundColor: PLAYER_POSITIONS[unit.owner]?.color || "#666" }}
                         />
 
-                        {unit.frozen > 0 && <Snowflake className="absolute -top-1 -right-1 w-2 h-2 text-blue-400" />}
+                        {unit.frozen > 0 && (
+                          <Snowflake className="absolute -top-1 -right-1 w-1.5 h-1.5 text-blue-400" />
+                        )}
                         {unit.hp < unit.maxHp && (
-                          <div className="absolute -bottom-2 left-0 w-full h-1 bg-gray-800 rounded border">
+                          <div className="absolute -bottom-2 left-0 w-full h-0.5 bg-gray-800 rounded border">
                             <div
-                              className={`h-full rounded ${unit.owner === "player" ? "bg-green-400" : "bg-red-400"}`}
-                              style={{ width: `${(unit.hp / unit.maxHp) * 100}%` }}
+                              className="h-full rounded"
+                              style={{
+                                backgroundColor: PLAYER_POSITIONS[unit.owner]?.color || "#666",
+                                width: `${(unit.hp / unit.maxHp) * 100}%`,
+                              }}
                             />
                           </div>
                         )}
@@ -1728,12 +1821,12 @@ export default function ProductionBattleArena() {
 
               {/* Main projectile */}
               <div
-                className="absolute w-2 h-2 rounded-full pointer-events-none animate-pulse"
+                className="absolute w-1.5 h-1.5 rounded-full pointer-events-none animate-pulse"
                 style={{
                   backgroundColor: projectile.color,
                   left: `${(projectile.currentX / GRID_SIZE) * 100}%`,
                   top: `${(projectile.currentY / GRID_SIZE) * 100}%`,
-                  boxShadow: `0 0 10px ${projectile.color}`,
+                  boxShadow: `0 0 8px ${projectile.color}`,
                 }}
               />
             </div>
@@ -1752,7 +1845,7 @@ export default function ProductionBattleArena() {
                 height: `${(explosion.radius / GRID_SIZE) * 100}%`,
                 opacity: explosion.opacity,
                 transform: "translate(-50%, -50%)",
-                boxShadow: `0 0 ${explosion.radius * 15}px ${explosion.color}`,
+                boxShadow: `0 0 ${explosion.radius * 10}px ${explosion.color}`,
               }}
             />
           ))}
@@ -1761,7 +1854,7 @@ export default function ProductionBattleArena() {
           {gameState.damageNumbers.map((damageNum) => (
             <div
               key={damageNum.id}
-              className={`absolute pointer-events-none font-bold text-xs md:text-sm ${
+              className={`absolute pointer-events-none font-bold text-xs ${
                 damageNum.isHealing ? "text-green-400" : "text-red-400"
               }`}
               style={{
@@ -1779,7 +1872,7 @@ export default function ProductionBattleArena() {
         </div>
       </div>
 
-      {/* Enhanced Card Deck for Small Screens */}
+      {/* Enhanced Card Deck for 4-Player */}
       <div className="flex-shrink-0 p-2 md:p-4 bg-gray-800/50 backdrop-blur-sm border-t border-gray-700">
         <Card className="p-2 md:p-3 bg-gray-800 border-gray-600">
           <div className="flex justify-between items-center mb-2">
@@ -1796,6 +1889,10 @@ export default function ProductionBattleArena() {
               >
                 <ChevronLeft className="w-3 h-3" />
               </Button>
+              <span className="text-xs px-2 py-1 text-gray-400">
+                {gameState.cardScrollIndex + 1}-{Math.min(gameState.cardScrollIndex + 4, gameState.deck.length)} of{" "}
+                {gameState.deck.length}
+              </span>
               <Button
                 onClick={() =>
                   setGameState((prev) => ({
@@ -1813,37 +1910,35 @@ export default function ProductionBattleArena() {
             </div>
           </div>
 
-          <div className="grid grid-cols-4 md:grid-cols-8 gap-1 md:gap-2">
-            {gameState.deck
-              .slice(gameState.cardScrollIndex, gameState.cardScrollIndex + (window.innerWidth < 768 ? 4 : 8))
-              .map((card, index) => {
-                const cost = getCardCost(card)
-                const canAfford = gameState.playerMana >= cost
-                const isSelected = gameState.selectedCard === card
+          <div className="grid grid-cols-4 gap-1 md:gap-2">
+            {gameState.deck.slice(gameState.cardScrollIndex, gameState.cardScrollIndex + 4).map((card, index) => {
+              const cost = getCardCost(card)
+              const canAfford = gameState.players.player1.mana >= cost
+              const isSelected = gameState.selectedCard === card
 
-                return (
-                  <Button
-                    key={index}
-                    onClick={() =>
-                      setGameState((prev) => ({
-                        ...prev,
-                        selectedCard: prev.selectedCard === card ? null : card,
-                      }))
-                    }
-                    disabled={!canAfford}
-                    variant={isSelected ? "default" : "outline"}
-                    className={`
-                    flex flex-col items-center p-1 md:p-2 h-16 md:h-20 text-xs
-                    ${!canAfford ? "opacity-50" : ""}
-                    ${isSelected ? "ring-2 ring-yellow-400 animate-pulse" : ""}
-                  `}
-                  >
-                    <span className="text-sm md:text-lg mb-1">{getCardIcon(card)}</span>
-                    <span className="capitalize font-semibold text-xs truncate w-full text-center">{card}</span>
-                    <Badge className="text-xs px-1 bg-purple-500 mt-1">{cost}</Badge>
-                  </Button>
-                )
-              })}
+              return (
+                <Button
+                  key={index}
+                  onClick={() =>
+                    setGameState((prev) => ({
+                      ...prev,
+                      selectedCard: prev.selectedCard === card ? null : card,
+                    }))
+                  }
+                  disabled={!canAfford}
+                  variant={isSelected ? "default" : "outline"}
+                  className={`
+          flex flex-col items-center p-1 md:p-2 h-20 md:h-24 text-xs
+          ${!canAfford ? "opacity-50" : ""}
+          ${isSelected ? "ring-2 ring-yellow-400 animate-pulse" : ""}
+        `}
+                >
+                  <span className="text-lg md:text-xl mb-1">{getCardIcon(card)}</span>
+                  <span className="capitalize font-semibold text-xs truncate w-full text-center">{card}</span>
+                  <Badge className="text-xs px-1 bg-purple-500 mt-1">{cost}</Badge>
+                </Button>
+              )
+            })}
           </div>
         </Card>
 
@@ -1851,8 +1946,10 @@ export default function ProductionBattleArena() {
         <div className="text-center mt-2 space-y-1">
           <p className="text-xs md:text-sm text-gray-300">
             {gameState.phase === "prep"
-              ? "🏗️ Build defenses! Units will pathfind to enemy tower!"
-              : "⚔️ Click your units, then click tiles to set targets!"}
+              ? "🏗️ Build defenses! Walls can now be destroyed! Use ← → to scroll cards"
+              : gameState.gameMode === "4player"
+                ? "⚔️ 4-Player FREE-FOR-ALL! Everyone fights everyone! Last player alive wins!"
+                : "⚔️ Click units to command them! Use ← → to scroll cards"}
           </p>
           {gameState.selectedCard && (
             <div className="bg-gray-700 rounded p-2 text-xs">
@@ -1880,6 +1977,15 @@ export default function ProductionBattleArena() {
             </div>
           )}
         </div>
+        {gameState.phase === "battle" && gameState.gameMode === "4player" && (
+          <div className="bg-red-900/50 rounded p-2 text-xs mt-2">
+            <p className="text-red-400 font-bold">🔥 4-PLAYER BATTLE ROYALE:</p>
+            <p className="text-gray-300">• Everyone attacks everyone else</p>
+            <p className="text-gray-300">• Units target nearest enemy tower</p>
+            <p className="text-gray-300">• Only 1 player can win!</p>
+            <p className="text-gray-300">• Destroy all enemy towers to victory!</p>
+          </div>
+        )}
       </div>
     </div>
   )
