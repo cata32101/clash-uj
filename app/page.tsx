@@ -38,6 +38,10 @@ const UNITS = {
   wizard: { name: "Wizard", cost: 4, hp: 90, damage: 50, range: 2, icon: "🧙", color: "#3B82F6", moveDelay: 15, size: 1.1, description: "Magic damage caster" },
   giant: { name: "Giant", cost: 6, hp: 300, damage: 60, range: 1, icon: "🗿", color: "#6B7280", moveDelay: 30, size: 1.5, description: "Massive tank unit" },
   healer: { name: "Healer", cost: 3, hp: 80, damage: 0, range: 2, icon: "✨", color: "#F59E0B", moveDelay: 15, size: 1.0, description: "Heals friendly units" },
+  goblins: { name: "Goblins", cost: 1, hp: 35, damage: 20, range: 1, icon: "👺", color: "#16A34A", moveDelay: 8, size: 0.9, description: "Fast and cheap melee attackers" },
+  skeleton: { name: "Skeleton", cost: 1, hp: 25, damage: 30, range: 1, icon: "💀", color: "#A1A1AA", moveDelay: 10, size: 0.9, description: "Fragile but high damage melee attackers" },
+  bomber: { name: "Bomber", cost: 2, hp: 40, damage: 60, range: 2, icon: "💣", color: "#7F1D1D", moveDelay: 20, size: 1.0, description: "Throws bombs that deal area damage" },
+  dragon: { name: "Dragon", cost: 7, hp: 250, damage: 80, range: 3, icon: "🐲", color: "#B91C1C", moveDelay: 25, size: 1.8, description: "Powerful flying unit that deals area damage" },
 }
 const SPELLS = {
   fireball: { name: "Fireball", cost: 4, damage: 100, radius: 2, icon: "🔥", color: "#DC2626", description: "Area fire damage" },
@@ -207,7 +211,7 @@ export default function FourPlayerBattleArena() {
     selectedCard: null,
     selectedUnit: null,
     hoveredTile: null,
-    deck: ["knight", "archer", "wizard", "fireball", "tower", "wall", "cannon", "heal"],
+    deck: ["knight", "archer", "goblins", "skeleton", "bomber", "dragon", "fireball", "tower"],
     winner: null,
     spectators: 0,
     projectiles: [],
@@ -1493,9 +1497,3 @@ export default function FourPlayerBattleArena() {
     </div>
   )
 }
-" in the document above. I want to add some new units, please add them.
-- goblins, cost 1, 35 hp, 20 damage, range 1, icon 👺, color #16A34A, moveDelay 8, size 0.9, description "Fast and cheap melee attackers"
-- skeleton, cost 1, 25 hp, 30 damage, range 1, icon 💀, color #A1A1AA, moveDelay 10, size 0.9, description "Fragile but high damage melee attackers"
-- bomber, cost 2, 40 hp, 60 damage (area), range 2, icon 💣, color #7F1D1D, moveDelay 20, size 1.0, description "Throws bombs that deal area damage"
-- dragon, cost 7, 250 hp, 80 damage (area), range 3, icon 🐲, color #B91C1C, moveDelay 25, size 1.8, description "Powerful flying unit that deals area damage"
-i want to add them to my deck t
