@@ -200,13 +200,15 @@ interface LobbyPlayer {
   slot: PlayerType
 }
 interface Lobby {
+  id: number; // Add the database ID
   code: string
-  host: string
+  host_id: string // Changed from host
   players: LobbyPlayer[]
-  gameMode: "2player" | "4player"
+  game_mode: "2player" | "4player" // Changed from gameMode
   wager: number
-  isPrivate: boolean
+  is_private: boolean
   status: "waiting" | "starting" | "in-game"
+  created_at: string; // Add created_at
 }
 interface Unit {
   id: string
@@ -426,58 +428,138 @@ export default function FourPlayerBattleArena() {
     }
   }
 
-  // --- LOBBY MANAGEMENT (Simulated) ---
-  const createLobby = (gameMode: "2player" | "4player") => {
-    if (!gameState.currentProfile || gameState.currentProfile.credits < gameState.wager)
-      return alert("Not enough credits!")
-    const playerPositions = gameMode === "4player" ? PLAYER_POSITIONS_4P : PLAYER_POSITIONS_2P
-    const newLobby: Lobby = {
-      code: Math.random().toString(36).substring(2, 8).toUpperCase(),
-      host: gameState.currentProfile.username,
-      players: [
-        {
-          username: gameState.currentProfile.username,
-          color: playerPositions.player1.color,
-          isReady: true,
-          isAI: false,
-          slot: "player1",
-        },
-      ],
-      gameMode,
-      wager: gameState.wager,
-      isPrivate: false,
-      status: "waiting",
+const createLobby = async (gameMode: "2player" | "4player") => {
+    if (!gameState.currentProfile || !gameState.currentUser || gameState.currentProfile.credits < gameState.wager) {
+      return alert("Not enough credits!");
     }
-    const maxPlayers = gameMode === "4player" ? 4 : 2
+
+    const playerPositions = gameMode === "4player" ? PLAYER_POSITIONS_4P : PLAYER_POSITIONS_2P;
+    const newLobbyCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    
+    // Build the full player list first
+    const playersList: LobbyPlayer[] = [
+      {
+        username: gameState.currentProfile.username,
+        color: playerPositions.player1.color,
+        isReady: true,
+        isAI: false,
+        slot: "player1",
+      },
+    ];
+
+    const maxPlayers = gameMode === "4player" ? 4 : 2;
     for (let i = 1; i < maxPlayers; i++) {
-      const slot = `player${i + 1}` as PlayerType
-      newLobby.players.push({
+      const slot = `player${i + 1}` as PlayerType;
+      playersList.push({
         username: `AI Bot ${i}`,
         color: playerPositions[slot].color,
         isReady: true,
         isAI: true,
         slot,
-      })
+      });
     }
-    // Simulate storing the lobby for others to find
-    localStorage.setItem(`lobby-${newLobby.code}`, JSON.stringify(newLobby))
-    setGameState((p) => ({ ...p, currentLobby: newLobby, phase: "lobby" }))
-  }
 
-  const joinLobby = () => {
-    const code = gameState.joinLobbyCode
-    if (!code) return alert("Please enter a lobby code.")
-    // Simulate finding a lobby from a shared space
-    const lobbyData = localStorage.getItem(`lobby-${code}`)
-    if (lobbyData) {
-      const lobby: Lobby = JSON.parse(lobbyData)
-      // In a real app, you'd check if the lobby is full on the server
-      alert(`Successfully joined lobby "${code}"! (This is a simulation)`)
-      setGameState((p) => ({ ...p, currentLobby: lobby, phase: "lobby" }))
+    const { data, error } = await supabase
+      .from("lobbies")
+      .insert({
+        code: newLobbyCode,
+        host_id: gameState.currentUser.id,
+        players: playersList, // Use the full player list
+        game_mode: gameMode,
+        wager: gameState.wager,
+        status: "waiting",
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error creating lobby:", error);
+      alert("Could not create lobby.");
     } else {
-      alert(`Lobby "${code}" not found. (Note: Lobbies are simulated and only exist on the host's browser).`)
+      setGameState((p) => ({ ...p, currentLobby: data, phase: "lobby" }));
     }
-  }
+  };
+
+  const joinLobby = async () => {
+    const code = gameState.joinLobbyCode.toUpperCase();
+    if (!code) return alert("Please enter a lobby code.");
+    if (!gameState.currentProfile) return alert("You must be logged in to join a lobby.");
+
+    const { data: lobby, error } = await supabase
+      .from("lobbies")
+      .select("*")
+      .eq("code", code)
+      .single();
+
+    if (error || !lobby) {
+      return alert(`Lobby "${code}" not found.`);
+    }
+    
+    const maxPlayers = lobby.game_mode === "4player" ? 4 : 2;
+    if (lobby.players.length >= maxPlayers) {
+        return alert("Lobby is full.");
+    }
+
+    if (lobby.players.some((p: LobbyPlayer) => p.username === gameState.currentProfile?.username)) {
+       // Player is already in the lobby, just enter
+       setGameState((p) => ({ ...p, currentLobby: lobby as Lobby, phase: "lobby" }));
+       return;
+    }
+
+    const playerPositions = lobby.game_mode === "4player" ? PLAYER_POSITIONS_4P : PLAYER_POSITIONS_2P;
+    const nextSlot = `player${lobby.players.length + 1}` as PlayerType;
+
+    const newPlayer: LobbyPlayer = {
+        username: gameState.currentProfile.username,
+        color: playerPositions[nextSlot].color,
+        isReady: false,
+        isAI: false,
+        slot: nextSlot
+    };
+
+    const { data: updatedLobby, error: updateError } = await supabase
+        .from('lobbies')
+        .update({ players: [...lobby.players, newPlayer] })
+        .eq('code', code)
+        .select()
+        .single();
+    
+    if (updateError) {
+        return alert("Failed to join lobby.");
+    }
+    
+    setGameState((p) => ({ ...p, currentLobby: updatedLobby as Lobby, phase: "lobby" }));
+  };
+
+  // --- REAL-TIME LOBBY SUBSCRIPTION ---
+  useEffect(() => {
+    // Only subscribe if we are in the lobby phase and have a lobby object
+    if (gameState.phase !== "lobby" || !gameState.currentLobby) return;
+
+    const channel = supabase
+      .channel(`lobby-${gameState.currentLobby.code}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "lobbies",
+          filter: `code=eq.${gameState.currentLobby.code}`,
+        },
+        (payload) => {
+          console.log("Lobby updated!", payload.new);
+          // When the lobby data changes in the database, update the local state
+          setGameState((p) => ({ ...p, currentLobby: payload.new as Lobby }));
+        }
+      )
+      .subscribe();
+
+    // Cleanup function to remove the channel subscription when the component unmounts
+    // or when the user leaves the lobby.
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [gameState.phase, gameState.currentLobby]); // Re-run this effect if the phase or lobby code changes
 
   const leaveLobby = () => setGameState((p) => ({ ...p, currentLobby: null, phase: "menu" }))
 
