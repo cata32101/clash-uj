@@ -1,39 +1,27 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import {
-  Zap,
-  Crown,
-  Coins,
-  Timer,
-  Users,
-  Snowflake,
-  Eye,
-  Crosshair,
-  Play,
-  Pause,
-  ChevronLeft,
-  ChevronRight,
-  Swords,
-} from "lucide-react"
+import { Zap, Crown, Coins, Timer, Users, Snowflake, Eye, Crosshair, Play, Pause, Swords } from "lucide-react"
 
 // Enhanced game constants for 4-player
 const GRID_SIZE = 24
 const PREP_TIME = 60
 const BATTLE_TIME = 240
-const MANA_MAX = 10
-const MANA_REGEN_RATE = 1000
+const MANA_MAX = 25
+const MANA_REGEN_RATE = 1500 // Slower mana regen (was 1000)
 
 // Player positions for 4-player mode - CORNER POSITIONS for better strategy
 const PLAYER_POSITIONS = {
-  player1: { towerX: 2, towerY: 21, color: "#22C55E", name: "YOU", icon: "👑" },
-  player2: { towerX: 21, towerY: 21, color: "#EF4444", name: "EAST", icon: "🔴" },
-  player3: { towerX: 21, towerY: 2, color: "#3B82F6", name: "NORTH", icon: "🔵" },
-  player4: { towerX: 2, towerY: 2, color: "#F59E0B", name: "WEST", icon: "🟡" },
+  player1: { towerX: 12, towerY: 21, color: "#22C55E", name: "YOU", icon: "👑" }, // Bottom center
+  player2: { towerX: 2, towerY: 12, color: "#EF4444", name: "WEST", icon: "🔴" }, // Left center
+  player3: { towerX: 12, towerY: 2, color: "#3B82F6", name: "NORTH", icon: "🔵" }, // Top center
+  player4: { towerX: 21, towerY: 12, color: "#F59E0B", name: "EAST", icon: "🟡" }, // Right center
 }
 
 // Enhanced unit types
@@ -47,7 +35,7 @@ const UNITS = {
     range: 1,
     icon: "⚔️",
     color: "#8B5CF6",
-    moveDelay: 12,
+    moveDelay: 18, // Slower (was 12)
     size: 1.2,
     description: "Tanky melee fighter",
   },
@@ -60,7 +48,7 @@ const UNITS = {
     range: 3,
     icon: "🏹",
     color: "#10B981",
-    moveDelay: 8,
+    moveDelay: 12, // Slower (was 8)
     size: 1.0,
     description: "Ranged damage dealer",
   },
@@ -73,7 +61,7 @@ const UNITS = {
     range: 2,
     icon: "🧙",
     color: "#3B82F6",
-    moveDelay: 10,
+    moveDelay: 15, // Slower (was 10)
     size: 1.1,
     description: "Magic damage caster",
   },
@@ -86,7 +74,7 @@ const UNITS = {
     range: 1,
     icon: "🗿",
     color: "#6B7280",
-    moveDelay: 20,
+    moveDelay: 30, // Slower (was 20)
     size: 1.5,
     description: "Massive tank unit",
   },
@@ -99,7 +87,7 @@ const UNITS = {
     range: 2,
     icon: "✨",
     color: "#F59E0B",
-    moveDelay: 10,
+    moveDelay: 15, // Slower (was 10)
     size: 1.0,
     description: "Heals friendly units",
   },
@@ -306,7 +294,6 @@ interface GameState {
   selectedBuilding: Building | null
   isPaused: boolean
   gameSpeed: number
-  cardScrollIndex: number
   gameMode: "2player" | "4player"
   alivePlayers: PlayerType[]
 }
@@ -337,7 +324,6 @@ export default function FourPlayerBattleArena() {
     selectedBuilding: null,
     isPaused: false,
     gameSpeed: 1.0,
-    cardScrollIndex: 0,
     gameMode: "4player",
     alivePlayers: ["player1", "player2", "player3", "player4"],
   })
@@ -354,17 +340,17 @@ export default function FourPlayerBattleArena() {
         let owner: PlayerType | "neutral" = "neutral"
 
         if (mode === "4player") {
-          // Corner territories for better strategic gameplay
-          const territorySize = 8
+          // Triangle/Cross territories for strategic gameplay
+          const territorySize = 6
 
-          // Player 1 - Bottom Left Corner
-          if (x < territorySize && y >= GRID_SIZE - territorySize) owner = "player1"
-          // Player 2 - Bottom Right Corner
-          else if (x >= GRID_SIZE - territorySize && y >= GRID_SIZE - territorySize) owner = "player2"
-          // Player 3 - Top Right Corner
-          else if (x >= GRID_SIZE - territorySize && y < territorySize) owner = "player3"
-          // Player 4 - Top Left Corner
-          else if (x < territorySize && y < territorySize) owner = "player4"
+          // Player 1 - Bottom center
+          if (Math.abs(x - 12) + Math.abs(y - 21) <= territorySize) owner = "player1"
+          // Player 2 - Left center
+          else if (Math.abs(x - 2) + Math.abs(y - 12) <= territorySize) owner = "player2"
+          // Player 3 - Top center
+          else if (Math.abs(x - 12) + Math.abs(y - 2) <= territorySize) owner = "player3"
+          // Player 4 - Right center
+          else if (Math.abs(x - 21) + Math.abs(y - 12) <= territorySize) owner = "player4"
         } else {
           // 2-player mode
           if (y >= GRID_SIZE - 6) owner = "player1"
@@ -459,7 +445,6 @@ export default function FourPlayerBattleArena() {
       explosions: [],
       selectedBuilding: null,
       isPaused: false,
-      cardScrollIndex: 0,
       gameMode: mode,
       alivePlayers: mode === "4player" ? ["player1", "player2", "player3", "player4"] : ["player1", "player2"],
     }))
@@ -827,7 +812,7 @@ export default function FourPlayerBattleArena() {
                           damage: unitStats.damage,
                           type: `${unit.owner}-${unit.type}`,
                           color: unitStats.color,
-                          speed: 0.1,
+                          speed: 0.06, // Slower projectiles (was 0.1)
                           velocity: {
                             x: (checkX - x) * 0.1,
                             y: (checkY - y) * 0.1,
@@ -841,7 +826,7 @@ export default function FourPlayerBattleArena() {
                         target.lastDamage = unitStats.damage
                       }
 
-                      unit.cooldown = 20
+                      unit.cooldown = 30 // Slower attacks (was 20)
                       foundTarget = true
                       break
                     }
@@ -863,7 +848,7 @@ export default function FourPlayerBattleArena() {
                           damage: unitStats.damage,
                           type: `${unit.owner}-${unit.type}`,
                           color: unitStats.color,
-                          speed: 0.08,
+                          speed: 0.06,
                           velocity: {
                             x: (checkX - x) * 0.08,
                             y: (checkY - y) * 0.08,
@@ -895,7 +880,7 @@ export default function FourPlayerBattleArena() {
                         })
                       }
 
-                      unit.cooldown = 20
+                      unit.cooldown = 30
                       foundTarget = true
                       break
                     }
@@ -991,7 +976,7 @@ export default function FourPlayerBattleArena() {
                       damage: buildingStats.damage,
                       type: `${building.owner}-${building.type}`,
                       color: buildingStats.color,
-                      speed: building.type === "tesla" ? 0.2 : 0.06,
+                      speed: 0.05, // Slower building projectiles (was 0.08)
                       velocity: {
                         x: (bestTarget.x - x) * (building.type === "tesla" ? 0.2 : 0.06),
                         y: (bestTarget.y - y) * (building.type === "tesla" ? 0.2 : 0.06),
@@ -1252,18 +1237,30 @@ export default function FourPlayerBattleArena() {
 
       newPlayers.player1.mana -= cost
 
+      // DON'T auto-deselect - keep card selected for multiple placements
       return {
         ...prev,
         grid: newGrid,
         players: newPlayers,
-        selectedCard: null,
+        // selectedCard: null, // REMOVED - keep selection
         damageNumbers: newDamageNumbers,
         explosions: newExplosions,
       }
     })
   }
 
-  const handleTileClick = (x: number, y: number) => {
+  const handleTileClick = (x: number, y: number, event?: React.MouseEvent) => {
+    // Right-click to deselect
+    if (event && event.button === 2) {
+      setGameState((prev) => ({
+        ...prev,
+        selectedCard: null,
+        selectedUnit: null,
+        selectedBuilding: null,
+      }))
+      return
+    }
+
     const tile = gameState.grid[y][x]
 
     // If we have a selected unit and clicked on a valid tile, set target
@@ -1378,7 +1375,7 @@ export default function FourPlayerBattleArena() {
           <h1 className="text-4xl md:text-8xl font-bold bg-gradient-to-r from-orange-400 via-red-500 to-purple-600 bg-clip-text text-transparent animate-pulse">
             4-PLAYER ARENA
           </h1>
-          <p className="text-lg md:text-2xl text-gray-300">Epic Battles • Territory Conquest • Corner Strategy</p>
+          <p className="text-lg md:text-2xl text-gray-300">Epic Battles • Territory Conquest • Triangle Strategy</p>
 
           <div className="flex justify-center space-x-4 md:space-x-8">
             <Badge className="text-lg md:text-2xl px-4 md:px-6 py-2 md:py-3 bg-green-500/20 border-green-500">
@@ -1453,7 +1450,7 @@ export default function FourPlayerBattleArena() {
             <div className="space-y-3">
               <h3 className="text-xl md:text-2xl font-bold text-orange-400">🔥 NEW FEATURES:</h3>
               <p className="text-sm md:text-base">• Territory conquest system!</p>
-              <p className="text-sm md:text-base">• Corner-based strategic positioning</p>
+              <p className="text-sm md:text-base">• Triangle-based strategic positioning</p>
               <p className="text-sm md:text-base">• Defeat enemies to claim their land</p>
               <p className="text-sm md:text-base">• Smart targeting (only alive players)</p>
             </div>
@@ -1608,9 +1605,13 @@ export default function FourPlayerBattleArena() {
                     ${gameState.selectedUnit && tile.owner === "player1" ? "hover:ring-1 hover:ring-green-400" : ""}
                   `}
                   style={{ backgroundColor: getTileColor(tile) }}
-                  onClick={() => handleTileClick(x, y)}
+                  onClick={(e) => handleTileClick(x, y, e)}
                   onMouseEnter={() => handleTileHover(x, y)}
                   onMouseLeave={handleTileLeave}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    handleTileClick(x, y, e)
+                  }}
                 >
                   {/* Range indicators */}
                   {gameState.showRanges &&
@@ -1899,43 +1900,17 @@ export default function FourPlayerBattleArena() {
           </div>
         </div>
 
-        {/* Card Deck */}
+        {/* Card Deck - Show ALL cards */}
         <div className="flex-1 p-4">
           <Card className="p-4 bg-gray-900 border-gray-600 h-full flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">{gameState.phase === "prep" ? "🏗️ BUILD" : "⚔️ DEPLOY"}</h3>
-              <div className="flex space-x-1">
-                <Button
-                  onClick={() =>
-                    setGameState((prev) => ({ ...prev, cardScrollIndex: Math.max(0, prev.cardScrollIndex - 1) }))
-                  }
-                  variant="outline"
-                  size="sm"
-                  className="px-2 py-1"
-                  disabled={gameState.cardScrollIndex === 0}
-                >
-                  <ChevronLeft className="w-3 h-3" />
-                </Button>
-                <Button
-                  onClick={() =>
-                    setGameState((prev) => ({
-                      ...prev,
-                      cardScrollIndex: Math.min(prev.deck.length - 2, prev.cardScrollIndex + 1),
-                    }))
-                  }
-                  variant="outline"
-                  size="sm"
-                  className="px-2 py-1"
-                  disabled={gameState.cardScrollIndex >= gameState.deck.length - 2}
-                >
-                  <ChevronRight className="w-3 h-3" />
-                </Button>
-              </div>
+              <div className="text-xs text-gray-400">Hold card to place multiple</div>
             </div>
 
-            {/* Cards Grid - 2 columns for right panel */}
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              {gameState.deck.slice(gameState.cardScrollIndex, gameState.cardScrollIndex + 6).map((card, index) => {
+            {/* All Cards Grid - 2x4 layout */}
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {gameState.deck.map((card, index) => {
                 const cost = getCardCost(card)
                 const canAfford = gameState.players.player1.mana >= cost
                 const isSelected = gameState.selectedCard === card
@@ -1943,40 +1918,42 @@ export default function FourPlayerBattleArena() {
                 return (
                   <Button
                     key={index}
-                    onClick={() =>
+                    onMouseDown={() => {
                       setGameState((prev) => ({
                         ...prev,
                         selectedCard: prev.selectedCard === card ? null : card,
                       }))
-                    }
+                    }}
+                    onMouseUp={() => {
+                      // Clear selection after a delay if not placing
+                      setTimeout(() => {
+                        if (!gameState.selectedCard) return
+                      }, 100)
+                    }}
                     disabled={!canAfford}
                     variant={isSelected ? "default" : "outline"}
                     className={`
-                      flex flex-col items-center p-3 h-24 text-sm
-                      ${!canAfford ? "opacity-50" : ""}
-                      ${isSelected ? "ring-2 ring-yellow-400 animate-pulse bg-yellow-600" : ""}
-                      hover:scale-105 transition-all duration-200
-                    `}
+              flex flex-col items-center p-2 h-20 text-sm
+              ${!canAfford ? "opacity-50" : ""}
+              ${isSelected ? "ring-2 ring-yellow-400 animate-pulse bg-yellow-600" : ""}
+              hover:scale-105 transition-all duration-200
+              active:scale-95
+            `}
                   >
-                    <span className="text-2xl mb-1">{getCardIcon(card)}</span>
+                    <span className="text-lg mb-1">{getCardIcon(card)}</span>
                     <span className="capitalize font-bold text-xs truncate w-full text-center">{card}</span>
-                    <Badge className="text-xs px-2 py-1 bg-purple-500 mt-1">{cost} ⚡</Badge>
+                    <Badge className="text-xs px-1 py-0.5 bg-purple-500 mt-1">{cost} ⚡</Badge>
                   </Button>
                 )
               })}
             </div>
 
-            <div className="text-center text-xs text-gray-400 mb-4">
-              Cards {gameState.cardScrollIndex + 1}-{Math.min(gameState.cardScrollIndex + 6, gameState.deck.length)} of{" "}
-              {gameState.deck.length}
-            </div>
-
-            {/* Status Display */}
+            {/* Enhanced Status Display */}
             <div className="space-y-3 flex-1">
               <p className="text-sm text-gray-300 text-center">
                 {gameState.phase === "prep"
                   ? "🏗️ Build in your CORNER territory!"
-                  : "⚔️ CORNER CONQUEST! Defeat enemies to claim their territory!"}
+                  : "⚔️ CORNER CONQUEST! Click & hold cards to place multiple!"}
               </p>
 
               {gameState.selectedCard && (
@@ -1985,6 +1962,7 @@ export default function FourPlayerBattleArena() {
                     Selected: {gameState.selectedCard} (Cost: {getCardCost(gameState.selectedCard)} mana)
                   </p>
                   <p className="text-gray-300 text-xs mt-1">{getCardDescription(gameState.selectedCard)}</p>
+                  <p className="text-blue-300 text-xs mt-1">💡 Hold card selected to place multiple items!</p>
                 </div>
               )}
 
@@ -2018,6 +1996,16 @@ export default function FourPlayerBattleArena() {
                   </ul>
                 </div>
               )}
+
+              <div className="bg-gray-700/50 rounded p-3 text-sm border border-gray-500">
+                <p className="text-gray-300 font-bold">🎮 CONTROLS:</p>
+                <ul className="text-gray-400 text-xs mt-1 space-y-1">
+                  <li>• Click card once to select</li>
+                  <li>• Hold selection to place multiple</li>
+                  <li>• Click units to command them</li>
+                  <li>• Right-click to deselect</li>
+                </ul>
+              </div>
 
               {gameState.spectators > 0 && (
                 <div className="text-center">
