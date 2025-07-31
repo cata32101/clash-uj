@@ -353,7 +353,6 @@ export default function FourPlayerBattleArena() {
 
     const playersList: LobbyPlayer[] = [hostPlayer];
     
-    // If it's a public game vs AI, fill the slots now
     if (!isPrivate && wager === 0) { // This is a Training game
       const maxPlayers = gameMode === "4player" ? 4 : 2;
       for (let i = 1; i < maxPlayers; i++) {
@@ -530,7 +529,7 @@ export default function FourPlayerBattleArena() {
     if (gameState.phase !== "lobby" || !gameState.currentLobby) return;
 
     const channel = supabase
-      .channel(`lobby-${gameState.currentLobby.code}`)
+      .channel(`lobby-${gameState.currentLobby.id}`)
       .on(
         "postgres_changes",
         {
@@ -1494,3 +1493,9 @@ export default function FourPlayerBattleArena() {
     </div>
   )
 }
+" in the document above. I want to add some new units, please add them.
+- goblins, cost 1, 35 hp, 20 damage, range 1, icon 👺, color #16A34A, moveDelay 8, size 0.9, description "Fast and cheap melee attackers"
+- skeleton, cost 1, 25 hp, 30 damage, range 1, icon 💀, color #A1A1AA, moveDelay 10, size 0.9, description "Fragile but high damage melee attackers"
+- bomber, cost 2, 40 hp, 60 damage (area), range 2, icon 💣, color #7F1D1D, moveDelay 20, size 1.0, description "Throws bombs that deal area damage"
+- dragon, cost 7, 250 hp, 80 damage (area), range 3, icon 🐲, color #B91C1C, moveDelay 25, size 1.8, description "Powerful flying unit that deals area damage"
+i want to add them to my deck t
