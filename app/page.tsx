@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Zap, Crown, Coins, Timer, Users, Eye, Play, Pause, Swords } from "lucide-react"
+import { Zap, Crown, Coins, Timer, Users, Eye, Play, Pause, Swords, Bot, UserPlus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { supabase } from "@/lib/supabase"
 import type { User } from "@supabase/supabase-js"
@@ -33,154 +33,23 @@ const PLAYER_POSITIONS_2P = {
 }
 
 const UNITS = {
-  knight: {
-    name: "Knight",
-    cost: 3,
-    hp: 120,
-    damage: 35,
-    range: 1,
-    icon: "⚔️",
-    color: "#8B5CF6",
-    moveDelay: 18,
-    size: 1.2,
-    description: "Tanky melee fighter",
-  },
-  archer: {
-    name: "Archer",
-    cost: 2,
-    hp: 70,
-    damage: 25,
-    range: 3,
-    icon: "🏹",
-    color: "#10B981",
-    moveDelay: 12,
-    size: 1.0,
-    description: "Ranged damage dealer",
-  },
-  wizard: {
-    name: "Wizard",
-    cost: 4,
-    hp: 90,
-    damage: 50,
-    range: 2,
-    icon: "🧙",
-    color: "#3B82F6",
-    moveDelay: 15,
-    size: 1.1,
-    description: "Magic damage caster",
-  },
-  giant: {
-    name: "Giant",
-    cost: 6,
-    hp: 300,
-    damage: 60,
-    range: 1,
-    icon: "🗿",
-    color: "#6B7280",
-    moveDelay: 30,
-    size: 1.5,
-    description: "Massive tank unit",
-  },
-  healer: {
-    name: "Healer",
-    cost: 3,
-    hp: 80,
-    damage: 0,
-    range: 2,
-    icon: "✨",
-    color: "#F59E0B",
-    moveDelay: 15,
-    size: 1.0,
-    description: "Heals friendly units",
-  },
+  knight: { name: "Knight", cost: 3, hp: 120, damage: 35, range: 1, icon: "⚔️", color: "#8B5CF6", moveDelay: 18, size: 1.2, description: "Tanky melee fighter" },
+  archer: { name: "Archer", cost: 2, hp: 70, damage: 25, range: 3, icon: "🏹", color: "#10B981", moveDelay: 12, size: 1.0, description: "Ranged damage dealer" },
+  wizard: { name: "Wizard", cost: 4, hp: 90, damage: 50, range: 2, icon: "🧙", color: "#3B82F6", moveDelay: 15, size: 1.1, description: "Magic damage caster" },
+  giant: { name: "Giant", cost: 6, hp: 300, damage: 60, range: 1, icon: "🗿", color: "#6B7280", moveDelay: 30, size: 1.5, description: "Massive tank unit" },
+  healer: { name: "Healer", cost: 3, hp: 80, damage: 0, range: 2, icon: "✨", color: "#F59E0B", moveDelay: 15, size: 1.0, description: "Heals friendly units" },
 }
 const SPELLS = {
-  fireball: {
-    name: "Fireball",
-    cost: 4,
-    damage: 100,
-    radius: 2,
-    icon: "🔥",
-    color: "#DC2626",
-    description: "Area fire damage",
-  },
-  freeze: {
-    name: "Freeze",
-    cost: 3,
-    duration: 40,
-    radius: 2,
-    icon: "❄️",
-    color: "#06B6D4",
-    description: "Freezes enemies",
-  },
-  lightning: {
-    name: "Lightning",
-    cost: 5,
-    damage: 150,
-    radius: 1,
-    icon: "⚡",
-    color: "#A855F7",
-    description: "High single damage",
-  },
-  heal: {
-    name: "Heal",
-    cost: 2,
-    healing: 80,
-    radius: 2,
-    icon: "💚",
-    color: "#22C55E",
-    description: "Heals friendly units",
-  },
+  fireball: { name: "Fireball", cost: 4, damage: 100, radius: 2, icon: "🔥", color: "#DC2626", description: "Area fire damage" },
+  freeze: { name: "Freeze", cost: 3, duration: 40, radius: 2, icon: "❄️", color: "#06B6D4", description: "Freezes enemies" },
+  lightning: { name: "Lightning", cost: 5, damage: 150, radius: 1, icon: "⚡", color: "#A855F7", description: "High single damage" },
+  heal: { name: "Heal", cost: 2, healing: 80, radius: 2, icon: "💚", color: "#22C55E", description: "Heals friendly units" },
 }
 const BUILDINGS = {
-  tower: {
-    name: "Tower",
-    cost: 4,
-    hp: 200,
-    damage: 40,
-    range: 4,
-    icon: "🏰",
-    color: "#1F2937",
-    attackSpeed: 25,
-    minRange: 0,
-    description: "Defensive structure",
-  },
-  wall: {
-    name: "Wall",
-    cost: 1,
-    hp: 500,
-    damage: 0,
-    range: 0,
-    icon: "🧱",
-    color: "#6B7280",
-    attackSpeed: 0,
-    minRange: 0,
-    description: "Blocks movement. High HP.",
-  },
-  cannon: {
-    name: "Cannon",
-    cost: 3,
-    hp: 100,
-    damage: 80,
-    range: 7,
-    icon: "💣",
-    color: "#7C2D12",
-    attackSpeed: 45,
-    minRange: 3,
-    description: "Long-range artillery",
-  },
-  tesla: {
-    name: "Tesla",
-    cost: 4,
-    hp: 100,
-    damage: 60,
-    range: 3,
-    icon: "⚡",
-    color: "#7C3AED",
-    attackSpeed: 20,
-    minRange: 0,
-    description: "Electric tower",
-  },
+  tower: { name: "Tower", cost: 4, hp: 200, damage: 40, range: 4, icon: "🏰", color: "#1F2937", attackSpeed: 25, minRange: 0, description: "Defensive structure" },
+  wall: { name: "Wall", cost: 1, hp: 500, damage: 0, range: 0, icon: "🧱", color: "#6B7280", attackSpeed: 0, minRange: 0, description: "Blocks movement. High HP." },
+  cannon: { name: "Cannon", cost: 3, hp: 100, damage: 80, range: 7, icon: "💣", color: "#7C2D12", attackSpeed: 45, minRange: 3, description: "Long-range artillery" },
+  tesla: { name: "Tesla", cost: 4, hp: 100, damage: 60, range: 3, icon: "⚡", color: "#7C3AED", attackSpeed: 20, minRange: 0, description: "Electric tower" },
 }
 
 // --- TYPE DEFINITIONS ---
@@ -193,6 +62,7 @@ interface Profile {
   losses: number
 }
 interface LobbyPlayer {
+  id: string;
   username: string
   color: string
   isReady: boolean
@@ -200,15 +70,15 @@ interface LobbyPlayer {
   slot: PlayerType
 }
 interface Lobby {
-  id: number; // Add the database ID
+  id: number;
   code: string
-  host_id: string // Changed from host
+  host_id: string
   players: LobbyPlayer[]
-  game_mode: "2player" | "4player" // Changed from gameMode
+  game_mode: "2player" | "4player"
   wager: number
   is_private: boolean
   status: "waiting" | "starting" | "in-game"
-  created_at: string; // Add created_at
+  created_at: string;
 }
 interface Unit {
   id: string
@@ -320,6 +190,7 @@ interface GameState {
   loginForm: { email: string; password: string; username: string }
   joinLobbyCode: string
   wager: number
+  menuSelection: '2p' | '4p' | null;
 }
 
 export default function FourPlayerBattleArena() {
@@ -349,6 +220,7 @@ export default function FourPlayerBattleArena() {
     loginForm: { email: "", password: "", username: "" },
     joinLobbyCode: "",
     wager: 25,
+    menuSelection: null,
   })
 
   const gameLoopRef = useRef<number>()
@@ -366,8 +238,6 @@ export default function FourPlayerBattleArena() {
         if (profile) {
           setGameState((p) => ({ ...p, currentProfile: profile, phase: "menu" }))
         } else {
-          // This case can happen if the profile trigger fails or is slow.
-          // For robustness, you could attempt to create a profile here.
           setGameState((p) => ({ ...p, phase: "login" }))
         }
       }
@@ -393,11 +263,7 @@ export default function FourPlayerBattleArena() {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: {
-          username: username,
-        },
-      },
+      options: { data: { username: username } },
     })
     if (error) alert(error.message)
     else alert("Account created! Please check your email to verify.")
@@ -428,35 +294,39 @@ export default function FourPlayerBattleArena() {
     }
   }
 
-const createLobby = async (gameMode: "2player" | "4player") => {
-    if (!gameState.currentProfile || !gameState.currentUser || gameState.currentProfile.credits < gameState.wager) {
-      return alert("Not enough credits!");
-    }
+  // --- LOBBY MANAGEMENT ---
+  const createLobby = async (gameMode: "2player" | "4player", isPrivate: boolean, wager: number) => {
+    if (!gameState.currentProfile || !gameState.currentUser) return alert("You must be logged in.");
+    if (wager > 0 && gameState.currentProfile.credits < wager) return alert("Not enough credits!");
 
     const playerPositions = gameMode === "4player" ? PLAYER_POSITIONS_4P : PLAYER_POSITIONS_2P;
     const newLobbyCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     
-    // Build the full player list first
-    const playersList: LobbyPlayer[] = [
-      {
-        username: gameState.currentProfile.username,
-        color: playerPositions.player1.color,
-        isReady: true,
-        isAI: false,
-        slot: "player1",
-      },
-    ];
+    const hostPlayer: LobbyPlayer = {
+      id: gameState.currentUser.id,
+      username: gameState.currentProfile.username,
+      color: playerPositions.player1.color,
+      isReady: true,
+      isAI: false,
+      slot: "player1",
+    };
 
-    const maxPlayers = gameMode === "4player" ? 4 : 2;
-    for (let i = 1; i < maxPlayers; i++) {
-      const slot = `player${i + 1}` as PlayerType;
-      playersList.push({
-        username: `AI Bot ${i}`,
-        color: playerPositions[slot].color,
-        isReady: true,
-        isAI: true,
-        slot,
-      });
+    const playersList: LobbyPlayer[] = [hostPlayer];
+    
+    // If it's a public game vs AI, fill the slots now
+    if (!isPrivate) {
+      const maxPlayers = gameMode === "4player" ? 4 : 2;
+      for (let i = 1; i < maxPlayers; i++) {
+        const slot = `player${i + 1}` as PlayerType;
+        playersList.push({
+          id: `ai-${i}`,
+          username: `AI Bot ${i}`,
+          color: playerPositions[slot].color,
+          isReady: true,
+          isAI: true,
+          slot,
+        });
+      }
     }
 
     const { data, error } = await supabase
@@ -464,9 +334,10 @@ const createLobby = async (gameMode: "2player" | "4player") => {
       .insert({
         code: newLobbyCode,
         host_id: gameState.currentUser.id,
-        players: playersList, // Use the full player list
+        players: playersList,
         game_mode: gameMode,
-        wager: gameState.wager,
+        wager: wager,
+        is_private: isPrivate,
         status: "waiting",
       })
       .select()
@@ -475,24 +346,29 @@ const createLobby = async (gameMode: "2player" | "4player") => {
     if (error) {
       console.error("Error creating lobby:", error);
       alert("Could not create lobby.");
-    } else {
-      setGameState((p) => ({ ...p, currentLobby: data, phase: "lobby" }));
+    } else if (data) {
+        if(isPrivate) {
+            setGameState((p) => ({ ...p, currentLobby: data, phase: "lobby" }));
+        } else {
+            // If it's a game vs AI, start immediately
+            startGame(data);
+        }
     }
   };
-
+  
   const joinLobby = async () => {
     const code = gameState.joinLobbyCode.toUpperCase();
     if (!code) return alert("Please enter a lobby code.");
-    if (!gameState.currentProfile) return alert("You must be logged in to join a lobby.");
+    if (!gameState.currentProfile || !gameState.currentUser) return alert("You must be logged in to join a lobby.");
 
     const { data: lobby, error } = await supabase
-      .from("lobbies")
-      .select("*")
-      .eq("code", code)
-      .single();
+        .from('lobbies')
+        .select('*')
+        .eq('code', code)
+        .single();
 
     if (error || !lobby) {
-      return alert(`Lobby "${code}" not found.`);
+        return alert(`Lobby "${code}" not found.`);
     }
     
     const maxPlayers = lobby.game_mode === "4player" ? 4 : 2;
@@ -500,16 +376,20 @@ const createLobby = async (gameMode: "2player" | "4player") => {
         return alert("Lobby is full.");
     }
 
-    if (lobby.players.some((p: LobbyPlayer) => p.username === gameState.currentProfile?.username)) {
-       // Player is already in the lobby, just enter
+    if (lobby.players.some((p: LobbyPlayer) => p.id === gameState.currentUser?.id)) {
        setGameState((p) => ({ ...p, currentLobby: lobby as Lobby, phase: "lobby" }));
        return;
+    }
+
+    if (gameState.currentProfile.credits < lobby.wager) {
+        return alert("You don't have enough credits to join this lobby.");
     }
 
     const playerPositions = lobby.game_mode === "4player" ? PLAYER_POSITIONS_4P : PLAYER_POSITIONS_2P;
     const nextSlot = `player${lobby.players.length + 1}` as PlayerType;
 
     const newPlayer: LobbyPlayer = {
+        id: gameState.currentUser.id,
         username: gameState.currentProfile.username,
         color: playerPositions[nextSlot].color,
         isReady: false,
@@ -531,44 +411,48 @@ const createLobby = async (gameMode: "2player" | "4player") => {
     setGameState((p) => ({ ...p, currentLobby: updatedLobby as Lobby, phase: "lobby" }));
   };
 
-  // --- REAL-TIME LOBBY SUBSCRIPTION ---
-  useEffect(() => {
-    // Only subscribe if we are in the lobby phase and have a lobby object
-    if (gameState.phase !== "lobby" || !gameState.currentLobby) return;
+  const leaveLobby = async () => {
+    if (!gameState.currentLobby || !gameState.currentUser) return;
+    
+    const updatedPlayers = gameState.currentLobby.players.filter(p => p.id !== gameState.currentUser?.id);
 
-    const channel = supabase
-      .channel(`lobby-${gameState.currentLobby.code}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "lobbies",
-          filter: `code=eq.${gameState.currentLobby.code}`,
-        },
-        (payload) => {
-          console.log("Lobby updated!", payload.new);
-          // When the lobby data changes in the database, update the local state
-          setGameState((p) => ({ ...p, currentLobby: payload.new as Lobby }));
-        }
-      )
-      .subscribe();
+    // If host leaves, delete lobby. Otherwise, just update players.
+    if (gameState.currentUser.id === gameState.currentLobby.host_id) {
+        await supabase.from('lobbies').delete().eq('id', gameState.currentLobby.id);
+    } else {
+        await supabase.from('lobbies').update({ players: updatedPlayers }).eq('id', gameState.currentLobby.id);
+    }
 
-    // Cleanup function to remove the channel subscription when the component unmounts
-    // or when the user leaves the lobby.
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [gameState.phase, gameState.currentLobby]); // Re-run this effect if the phase or lobby code changes
+    setGameState((p) => ({ ...p, currentLobby: null, phase: "menu" }));
+  }
 
-  const leaveLobby = () => setGameState((p) => ({ ...p, currentLobby: null, phase: "menu" }))
+  const startGame = (lobby: Lobby) => {
+    if (!gameState.currentProfile) return;
+    
+    let currentPlayers = [...lobby.players];
+    const maxPlayers = lobby.game_mode === '4player' ? 4 : 2;
+    const playerPositions = lobby.game_mode === "4player" ? PLAYER_POSITIONS_4P : PLAYER_POSITIONS_2P;
 
-  const startGameFromLobby = () => {
-    if (!gameState.currentLobby || !gameState.currentProfile) return
-    updateProfile({ credits: gameState.currentProfile.credits - gameState.currentLobby.wager })
-    const players: Record<PlayerType, PlayerState> = {} as any
-    const alivePlayers: PlayerType[] = []
-    gameState.currentLobby.players.forEach((lp) => {
+    // Fill remaining slots with AI if lobby isn't full
+    while (currentPlayers.length < maxPlayers) {
+        const slot = `player${currentPlayers.length + 1}` as PlayerType;
+        currentPlayers.push({
+            id: `ai-${currentPlayers.length}`,
+            username: `AI Bot ${currentPlayers.length}`,
+            color: playerPositions[slot].color,
+            isReady: true,
+            isAI: true,
+            slot,
+        });
+    }
+
+    if (lobby.wager > 0) {
+        updateProfile({ credits: gameState.currentProfile.credits - lobby.wager });
+    }
+
+    const players: Record<PlayerType, PlayerState> = {} as any;
+    const alivePlayers: PlayerType[] = [];
+    currentPlayers.forEach((lp) => {
       players[lp.slot] = {
         hp: 300,
         mana: MANA_MAX,
@@ -579,18 +463,50 @@ const createLobby = async (gameMode: "2player" | "4player") => {
       }
       alivePlayers.push(lp.slot)
     })
+
     setGameState((p) => ({
       ...p,
       phase: "prep",
       phaseTime: PREP_TIME,
       players,
       alivePlayers,
-      grid: initializeGrid(p.currentLobby!.gameMode),
-      gameMode: p.currentLobby!.gameMode,
-    }))
+      grid: initializeGrid(lobby.game_mode),
+      gameMode: lobby.game_mode,
+      currentLobby: lobby,
+    }));
   }
 
-  // --- CORE GAME LOGIC (Unaltered from user's preferred version) ---
+  // --- REAL-TIME LOBBY SUBSCRIPTION ---
+  useEffect(() => {
+    if (gameState.phase !== "lobby" || !gameState.currentLobby) return;
+
+    const channel = supabase
+      .channel(`lobby-${gameState.currentLobby.code}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "lobbies",
+          filter: `code=eq.${gameState.currentLobby.code}`,
+        },
+        (payload) => {
+          if (payload.eventType === 'DELETE') {
+              alert("The host has left the lobby.");
+              setGameState((p) => ({ ...p, currentLobby: null, phase: "menu" }));
+          } else {
+              setGameState((p) => ({ ...p, currentLobby: payload.new as Lobby }));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [gameState.phase, gameState.currentLobby]);
+
+  // --- CORE GAME LOGIC ---
   const initializeGrid = useCallback((mode: "2player" | "4player"): Tile[][] => {
     const grid: Tile[][] = Array.from({ length: GRID_SIZE }, (_, y) =>
       Array.from({ length: GRID_SIZE }, (_, x) => ({ x, y, owner: "neutral", units: [] })),
@@ -1097,9 +1013,9 @@ const createLobby = async (gameMode: "2player" | "4player") => {
   if (gameState.phase === "menu")
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-blue-900 text-white flex flex-col items-center justify-center p-4">
-        <div className="text-center space-y-8 max-w-4xl">
+        <div className="text-center space-y-8 max-w-4xl w-full">
           <h1 className="text-4xl md:text-8xl font-bold bg-gradient-to-r from-orange-400 via-red-500 to-purple-600 bg-clip-text text-transparent animate-pulse">
-            4-PLAYER ARENA
+            GRID CONQUEST
           </h1>
           <p className="text-lg md:text-2xl text-gray-300">Welcome, {gameState.currentProfile?.username}</p>
           <div className="flex justify-center space-x-4 md:space-x-8">
@@ -1114,58 +1030,52 @@ const createLobby = async (gameMode: "2player" | "4player") => {
           </div>
           <Card className="p-6 md:p-8 bg-gray-800/50 border-gray-600">
             <h3 className="text-2xl md:text-3xl font-bold mb-6 text-yellow-400">CHOOSE YOUR BATTLE</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <h4 className="text-xl font-bold text-blue-400">🎯 2-PLAYER DUEL</h4>
-                <Button
-                  onClick={() => createLobby("2player")}
-                  disabled={gameState.currentProfile!.credits < gameState.wager}
-                  className="w-full text-lg py-3 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-400 hover:to-cyan-400 font-bold"
-                >
-                  <Swords className="w-5 h-5 mr-2" />
-                  CREATE DUEL
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Button onClick={() => createLobby(gameState.gameMode, false, 0)} className="w-full text-lg py-6 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-400 hover:to-gray-500 font-bold flex-col h-auto">
+                    <Bot className="w-8 h-8 mb-2" />
+                    Play vs. AI (Free)
                 </Button>
-              </div>
-              <div className="space-y-4">
-                <h4 className="text-xl font-bold text-red-400">⚔️ 4-PLAYER CHAOS</h4>
-                <Button
-                  onClick={() => createLobby("4player")}
-                  disabled={gameState.currentProfile!.credits < gameState.wager}
-                  className="w-full text-lg py-3 bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-400 hover:to-orange-400 font-bold"
-                >
-                  <Crown className="w-5 h-5 mr-2" />
-                  CREATE BRAWL
+                <Button onClick={() => createLobby(gameState.gameMode, true, gameState.wager)} className="w-full text-lg py-6 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-400 hover:to-cyan-400 font-bold flex-col h-auto">
+                    <Swords className="w-8 h-8 mb-2" />
+                    Create Private Lobby
                 </Button>
-              </div>
+                <div className="space-y-2">
+                     <Input
+                        id="lobby-code"
+                        placeholder="LOBBY CODE"
+                        className="bg-gray-900 text-center h-12 text-lg"
+                        value={gameState.joinLobbyCode}
+                        onChange={(e) => setGameState((p) => ({ ...p, joinLobbyCode: e.target.value.toUpperCase() }))}
+                      />
+                    <Button onClick={joinLobby} className="w-full text-lg py-3 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 font-bold">
+                        <UserPlus className="w-5 h-5 mr-2" />
+                        Join Lobby
+                    </Button>
+                </div>
             </div>
+
             <div className="mt-6 space-y-4">
+              <div className="flex items-center justify-center gap-4">
+                <Label className="text-lg font-semibold">Game Mode:</Label>
+                <Button onClick={() => setGameState(p => ({...p, gameMode: '2player'}))} variant={gameState.gameMode === '2player' ? 'secondary' : 'outline'}>2 Players</Button>
+                <Button onClick={() => setGameState(p => ({...p, gameMode: '4player'}))} variant={gameState.gameMode === '4player' ? 'secondary' : 'outline'}>4 Players</Button>
+              </div>
+
               <div>
-                <Label className="text-lg font-semibold mb-3 block">Entry Fee:</Label>
+                <Label className="text-lg font-semibold mb-3 block">Entry Fee (for Private Lobbies):</Label>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {[10, 25, 50, 100].map((amount) => (
                     <Button
                       key={amount}
                       onClick={() => setGameState((p) => ({ ...p, wager: amount }))}
-                      variant={gameState.wager === amount ? "default" : "outline"}
+                      variant={gameState.wager === amount ? "secondary" : "outline"}
                       className="text-sm md:text-lg py-2 md:py-3"
                       disabled={gameState.currentProfile!.credits < amount}
                     >
                       {amount} Credits
                     </Button>
                   ))}
-                </div>
-              </div>
-              <div className="space-y-2 pt-4">
-                <Label htmlFor="lobby-code">Join with Code</Label>
-                <div className="flex space-x-2">
-                  <Input
-                    id="lobby-code"
-                    placeholder="LOBBY CODE"
-                    className="bg-gray-900"
-                    value={gameState.joinLobbyCode}
-                    onChange={(e) => setGameState((p) => ({ ...p, joinLobbyCode: e.target.value.toUpperCase() }))}
-                  />
-                  <Button onClick={joinLobby}>Join</Button>
                 </div>
               </div>
             </div>
@@ -1188,19 +1098,13 @@ const createLobby = async (gameMode: "2player" | "4player") => {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className={cn("grid gap-4", gameState.gameMode === "4player" ? "grid-cols-2" : "grid-cols-1")}>
+            <div className={cn("grid gap-4", gameState.currentLobby?.game_mode === "4player" ? "grid-cols-2" : "grid-cols-1")}>
               {gameState.currentLobby?.players.map((player) => (
                 <Card key={player.slot} className="p-4 bg-gray-700/50 flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <div className="w-5 h-5 rounded-full" style={{ backgroundColor: player.color }}></div>
                     <span className="font-bold">{player.username}</span>
                   </div>
-                  {player.slot !== "player1" && (
-                    <div className="flex items-center space-x-2">
-                      <Label>AI</Label>
-                      <Switch checked={player.isAI} disabled={true} />
-                    </div>
-                  )}
                 </Card>
               ))}
             </div>
@@ -1208,9 +1112,11 @@ const createLobby = async (gameMode: "2player" | "4player") => {
               <Button variant="destructive" onClick={leaveLobby}>
                 Leave
               </Button>
-              <Button className="bg-green-600 hover:bg-green-700" onClick={startGameFromLobby}>
-                START GAME
-              </Button>
+              {gameState.currentUser?.id === gameState.currentLobby?.host_id && (
+                <Button className="bg-green-600 hover:bg-green-700" onClick={() => startGame(gameState.currentLobby!)}>
+                    START GAME
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -1233,23 +1139,25 @@ const createLobby = async (gameMode: "2player" | "4player") => {
             <div className="space-y-6">
               <div className="text-center space-y-2">
                 <p className="text-2xl md:text-3xl font-bold text-green-400">
-                  {isWinner
+                  {wager > 0 ? (isWinner
                     ? `+${winnings} Credits Won!`
-                    : wager > 0 && !isWinner && gameState.winner !== "tie"
+                    : gameState.winner !== "tie"
                       ? `-${wager} Credits Lost`
-                      : "No credits changed."}
+                      : "No credits changed.") : "Good game!"}
                 </p>
               </div>
             </div>
           </Card>
           <Button
             onClick={() => {
-              const creditChange = isWinner ? winnings : gameState.winner === "tie" ? 0 : -wager
-              updateProfile({
-                credits: gameState.currentProfile!.credits + creditChange,
-                wins: gameState.currentProfile!.wins + (isWinner ? 1 : 0),
-                losses: gameState.currentProfile!.losses + (!isWinner && gameState.winner !== "tie" ? 1 : 0),
-              })
+                if (wager > 0) {
+                    const creditChange = isWinner ? winnings : gameState.winner === "tie" ? 0 : -wager
+                    updateProfile({
+                        credits: gameState.currentProfile!.credits + creditChange,
+                        wins: gameState.currentProfile!.wins + (isWinner ? 1 : 0),
+                        losses: gameState.currentProfile!.losses + (!isWinner && gameState.winner !== "tie" ? 1 : 0),
+                    })
+                }
               setGameState((p) => ({ ...p, phase: "menu", currentLobby: null }))
             }}
             className="text-lg md:text-2xl px-6 md:px-8 py-3 md:py-4 bg-gradient-to-r from-blue-500 to-purple-500 font-bold"
