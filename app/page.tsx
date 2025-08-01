@@ -32,23 +32,29 @@ const PLAYER_POSITIONS_2P = {
   player2: { towerX: 12, towerY: 1, color: "#EF4444", name: "OPPONENT", icon: "🔴" },
 }
 
-// --- NEW ARCADE-BATTLE THEME ASSETS ---
-// I've added an 'image' property. You can replace the emoji in 'icon' with a URL to an image file.
 const UNITS = {
-  grunt: { name: "Grunt", cost: 1, hp: 50, damage: 15, range: 1, icon: "👤", image: null, color: "#A1A1AA", moveDelay: 12, size: 0.9, description: "Basic, cheap infantry." },
-  jeep: { name: "Jeep", cost: 2, hp: 90, damage: 25, range: 3, icon: "🚙", image: null, color: "#10B981", moveDelay: 8, size: 1.0, description: "Fast recon and harassment unit." },
-  tank: { name: "Tank", cost: 5, hp: 300, damage: 70, range: 3, icon: "🚚", image: null, color: "#8B5CF6", moveDelay: 25, size: 1.4, description: "Heavy armor with a powerful cannon." },
-  artillery: { name: "Artillery", cost: 6, hp: 120, damage: 120, range: 7, icon: "💣", image: null, color: "#F59E0B", moveDelay: 35, size: 1.2, description: "Long-range siege unit." },
-};
+  knight: { name: "Knight", cost: 3, hp: 120, damage: 35, range: 1, icon: "⚔️", color: "#8B5CF6", moveDelay: 18, size: 1.2, description: "Tanky melee fighter" },
+  archer: { name: "Archer", cost: 2, hp: 70, damage: 25, range: 3, icon: "🏹", color: "#10B981", moveDelay: 12, size: 1.0, description: "Ranged damage dealer" },
+  wizard: { name: "Wizard", cost: 4, hp: 90, damage: 50, range: 2, icon: "🧙", color: "#3B82F6", moveDelay: 15, size: 1.1, description: "Magic damage caster" },
+  giant: { name: "Giant", cost: 6, hp: 300, damage: 60, range: 1, icon: "🗿", color: "#6B7280", moveDelay: 30, size: 1.5, description: "Massive tank unit" },
+  healer: { name: "Healer", cost: 3, hp: 80, damage: 0, range: 2, icon: "✨", color: "#F59E0B", moveDelay: 15, size: 1.0, description: "Heals friendly units" },
+  goblins: { name: "Goblins", cost: 1, hp: 35, damage: 20, range: 1, icon: "👺", color: "#16A34A", moveDelay: 8, size: 0.9, description: "Fast and cheap melee attackers" },
+  skeleton: { name: "Skeleton", cost: 1, hp: 25, damage: 30, range: 1, icon: "💀", color: "#A1A1AA", moveDelay: 10, size: 0.9, description: "Fragile but high damage melee attackers" },
+  bomber: { name: "Bomber", cost: 2, hp: 40, damage: 60, range: 2, icon: "💣", color: "#7F1D1D", moveDelay: 20, size: 1.0, description: "Throws bombs that deal area damage" },
+  dragon: { name: "Dragon", cost: 7, hp: 250, damage: 80, range: 3, icon: "🐲", color: "#B91C1C", moveDelay: 25, size: 1.8, description: "Powerful flying unit that deals area damage" },
+}
 const SPELLS = {
-  airstrike: { name: "Airstrike", cost: 5, damage: 150, radius: 3, icon: "✈️", image: null, color: "#DC2626", description: "Calls in a devastating airstrike." },
-  repair: { name: "Repair", cost: 3, healing: 100, radius: 2, icon: "🛠️", image: null, color: "#22C55E", description: "Repairs friendly units and buildings." },
-};
+  fireball: { name: "Fireball", cost: 4, damage: 100, radius: 2, icon: "🔥", color: "#DC2626", description: "Area fire damage" },
+  freeze: { name: "Freeze", cost: 3, duration: 40, radius: 2, icon: "❄️", color: "#06B6D4", description: "Freezes enemies" },
+  lightning: { name: "Lightning", cost: 5, damage: 150, radius: 1, icon: "⚡", color: "#A855F7", description: "High single damage" },
+  heal: { name: "Heal", cost: 2, healing: 80, radius: 2, icon: "💚", color: "#22C55E", description: "Heals friendly units" },
+}
 const BUILDINGS = {
-  bunker: { name: "Bunker", cost: 3, hp: 400, damage: 0, range: 0, icon: "🧱", image: null, color: "#6B7280", attackSpeed: 0, minRange: 0, description: "Defensive structure with high HP." },
-  turret: { name: "Turret", cost: 4, hp: 200, damage: 35, range: 5, icon: "🔫", image: null, color: "#1F2937", attackSpeed: 20, minRange: 0, description: "Automated defensive turret." },
-};
-
+  tower: { name: "Tower", cost: 4, hp: 200, damage: 40, range: 4, icon: "🏰", color: "#1F2937", attackSpeed: 25, minRange: 0, description: "Defensive structure" },
+  wall: { name: "Wall", cost: 1, hp: 500, damage: 0, range: 0, icon: "🧱", color: "#6B7280", attackSpeed: 0, minRange: 0, description: "Blocks movement. High HP." },
+  cannon: { name: "Cannon", cost: 3, hp: 100, damage: 80, range: 7, icon: "💣", color: "#7C2D12", attackSpeed: 45, minRange: 3, description: "Long-range artillery" },
+  tesla: { name: "Tesla", cost: 4, hp: 100, damage: 60, range: 3, icon: "⚡", color: "#7C3AED", attackSpeed: 20, minRange: 0, description: "Electric tower" },
+}
 
 // --- TYPE DEFINITIONS ---
 type PlayerType = "player1" | "player2" | "player3" | "player4"
@@ -205,7 +211,7 @@ export default function FourPlayerBattleArena() {
     selectedCard: null,
     selectedUnit: null,
     hoveredTile: null,
-    deck: ["grunt", "jeep", "tank", "artillery", "airstrike", "repair", "bunker", "turret"],
+    deck: ["knight", "archer", "goblins", "skeleton", "bomber", "dragon", "fireball", "tower"],
     winner: null,
     spectators: 0,
     projectiles: [],
@@ -225,7 +231,6 @@ export default function FourPlayerBattleArena() {
 
   const gameLoopRef = useRef<number>()
   const manaTimerRef = useRef<NodeJS.Timeout>()
-  const lastTimeRef = useRef(0);
 
   // --- AUTH & PROFILE MANAGEMENT (Supabase) ---
   useEffect(() => {
@@ -578,7 +583,7 @@ export default function FourPlayerBattleArena() {
     Object.entries(playerPositions).forEach(([player, pos]) => {
       grid[pos.towerY][pos.towerX].building = {
         id: `${player}-main`,
-        type: "turret",
+        type: "tower",
         owner: player as PlayerType,
         x: pos.towerX,
         y: pos.towerY,
@@ -669,138 +674,239 @@ export default function FourPlayerBattleArena() {
     }
   }, [gameState.phase, gameState.isPaused])
 
-    // --- MAIN GAME LOOP ---
-    // This useEffect hook runs the main game loop using requestAnimationFrame.
-    // It's dependent on the game phase and the paused state.
-    useEffect(() => {
-        // If not in battle or the game is paused, do nothing.
-        if (gameState.phase !== "battle" || gameState.isPaused) {
-            // Cancel any existing animation frame to halt the loop.
-            if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
-            return;
+  useEffect(() => {
+    if (gameState.phase !== "battle" || gameState.isPaused) return
+    const gameLoop = () => {
+      setGameState((prev) => {
+        const newGrid = prev.grid.map((row) =>
+          row.map((tile) => ({
+            ...tile,
+            units: tile.units.map((u) => ({ ...u })),
+            building: tile.building ? { ...tile.building } : undefined,
+          })),
+        )
+        const newPlayers = JSON.parse(JSON.stringify(prev.players))
+        let newProjectiles = [...prev.projectiles]
+        const newDamageNumbers = [...prev.damageNumbers]
+          .map((d) => ({ ...d, opacity: d.opacity - 0.015, y: d.y - 0.02 }))
+          .filter((d) => d.opacity > 0)
+        const newExplosions = [...prev.explosions]
+          .map((e) => ({ ...e, radius: e.radius + 0.1, opacity: e.opacity - 0.05 }))
+          .filter((e) => e.opacity > 0)
+
+        newProjectiles = newProjectiles
+          .map((p) => ({
+            ...p,
+            currentX: p.currentX + p.velocity.x,
+            currentY: p.currentY + p.velocity.y,
+            progress: p.progress + p.speed,
+          }))
+          .filter((p) => {
+            if (Math.hypot(p.currentX - p.toX, p.currentY - p.toY) < 0.5 || p.progress >= 1) {
+              const hitX = Math.floor(p.toX),
+                hitY = Math.floor(p.toY)
+              if (hitX >= 0 && hitX < GRID_SIZE && hitY >= 0 && hitY < GRID_SIZE) {
+                const targetTile = newGrid[hitY][hitX]
+                newExplosions.push({
+                  id: `e-${Math.random()}`,
+                  x: p.toX,
+                  y: p.toY,
+                  radius: 0,
+                  maxRadius: 1.5,
+                  opacity: 1,
+                  color: p.color,
+                })
+                targetTile.units.forEach((u) => {
+                  if (u.owner !== p.owner) {
+                    u.hp = Math.max(0, u.hp - p.damage)
+                    newDamageNumbers.push({
+                      id: `d-${Math.random()}`,
+                      x: u.x,
+                      y: u.y,
+                      damage: p.damage,
+                      opacity: 1,
+                      velocity: { x: 0, y: -0.03 },
+                    })
+                  }
+                })
+                if (targetTile.building && targetTile.building.owner !== p.owner) {
+                  const b = targetTile.building
+                  b.hp = Math.max(0, b.hp - p.damage)
+                  newDamageNumbers.push({
+                    id: `d-${Math.random()}`,
+                    x: b.x,
+                    y: b.y,
+                    damage: p.damage,
+                    opacity: 1,
+                    velocity: { x: 0, y: -0.04 },
+                  })
+                  if (b.isMainTower) newPlayers[b.owner].hp = b.hp
+                }
+              }
+              return false
+            }
+            return true
+          })
+
+        for (let y = 0; y < GRID_SIZE; y++) {
+          for (let x = 0; x < GRID_SIZE; x++) {
+            const tile = newGrid[y][x]
+            tile.units = tile.units
+              .map((u) => ({
+                ...u,
+                cooldown: Math.max(0, u.cooldown - 1),
+                frozen: Math.max(0, u.frozen - 1),
+                moveCooldown: Math.max(0, u.moveCooldown - 1),
+              }))
+              .filter((u) => u.hp > 0)
+            if (tile.building) tile.building.cooldown = Math.max(0, tile.building.cooldown - 1)
+            tile.units.forEach((unit) => {
+              if (unit.frozen > 0 || unit.cooldown > 0) return
+              const stats = UNITS[unit.type]
+              let target: Unit | Building | null = null
+              for (let dy = -stats.range; dy <= stats.range; dy++) {
+                for (let dx = -stats.range; dx <= stats.range; dx++) {
+                  const checkX = x + dx,
+                    checkY = y + dy
+                  if (checkX >= 0 && checkX < GRID_SIZE && checkY >= 0 && checkY < GRID_SIZE) {
+                    const checkTile = newGrid[checkY][checkX]
+                    const potentialUnit = checkTile.units.find((u) => u.owner !== unit.owner)
+                    if (potentialUnit) {
+                      target = potentialUnit
+                      break
+                    }
+                    if (checkTile.building && checkTile.building.owner !== unit.owner) {
+                      target = checkTile.building
+                      break
+                    }
+                  }
+                }
+                if (target) break
+              }
+              if (target) {
+                unit.cooldown = 30
+                if (stats.range > 1) {
+                  const angle = Math.atan2(target.y - unit.y, target.x - unit.x),
+                    speed = 0.2
+                  newProjectiles.push({
+                    id: `p-${Math.random()}`,
+                    fromX: unit.x,
+                    fromY: unit.y,
+                    toX: target.x,
+                    toY: target.y,
+                    currentX: unit.x,
+                    currentY: unit.y,
+                    progress: 0,
+                    damage: stats.damage,
+                    type: unit.type,
+                    color: stats.color,
+                    speed,
+                    velocity: { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed },
+                    trail: [],
+                    owner: unit.owner,
+                  })
+                } else {
+                  target.hp = Math.max(0, target.hp - stats.damage)
+                  newDamageNumbers.push({
+                    id: `d-${Math.random()}`,
+                    x: target.x,
+                    y: target.y,
+                    damage: stats.damage,
+                    opacity: 1,
+                    velocity: { x: 0, y: -0.03 },
+                  })
+                  if ("isMainTower" in target && target.isMainTower) newPlayers[target.owner].hp = target.hp
+                }
+              } else if (unit.moveCooldown === 0) {
+                const nextPos = getNextMovePosition(unit, x, y, prev.alivePlayers, prev.gameMode)
+                if (nextPos && (nextPos.x !== x || nextPos.y !== y)) {
+                  const nextTile = newGrid[nextPos.y]?.[nextPos.x]
+                  if (nextTile && nextTile.units.length < 3 && !nextTile.building) {
+                    nextTile.units.push({ ...unit, x: nextPos.x, y: nextPos.y, moveCooldown: stats.moveDelay })
+                    tile.units = tile.units.filter((u) => u.id !== unit.id)
+                    if (unit.targetX === nextPos.x && unit.targetY === nextPos.y) {
+                      unit.targetX = undefined
+                      unit.targetY = undefined
+                    }
+                  }
+                } else if (!nextPos) {
+                  unit.targetX = undefined
+                  unit.targetY = undefined
+                }
+              }
+            })
+          }
+        }
+        newGrid.forEach((row) =>
+          row.forEach((tile) => {
+            if (tile.building && tile.building.hp <= 0) tile.building = undefined
+          }),
+        )
+
+        prev.alivePlayers.forEach((player) => {
+          if (newPlayers[player].isAI && Math.random() < 0.06 && newPlayers[player].mana >= 2) {
+            const affordable = prev.deck.filter((c) => getCardCost(c) <= newPlayers[player].mana)
+            if (affordable.length > 0) {
+              const card = affordable[Math.floor(Math.random() * affordable.length)]
+              const cost = getCardCost(card)
+              const territory = newGrid.flat().filter((t) => t.owner === player && !t.building && t.units.length < 2)
+              if (territory.length > 0) {
+                const tile = territory[Math.floor(Math.random() * territory.length)]
+                if (UNITS[card as keyof typeof UNITS]) {
+                  const stats = UNITS[card as keyof typeof UNITS]
+                  tile.units.push({
+                    id: `${player}-${Math.random()}`,
+                    type: card as keyof typeof UNITS,
+                    owner: player,
+                    x: tile.x,
+                    y: tile.y,
+                    hp: stats.hp,
+                    maxHp: stats.hp,
+                    cooldown: 0,
+                    frozen: 0,
+                    moveCooldown: 0,
+                    healCooldown: 0,
+                    isMoving: false,
+                    isSelected: false,
+                  })
+                  newPlayers[player].mana -= cost
+                }
+              }
+            }
+          }
+        })
+
+        const stillAlive = prev.alivePlayers.filter((pId) => {
+          if (newPlayers[pId].hp <= 0) {
+            const conqueror = prev.alivePlayers.find((p) => p !== pId && newPlayers[p].isAlive)
+            if (conqueror) conquestTerritory(pId, conqueror, newGrid)
+            newPlayers[pId].isAlive = false
+            return false
+          }
+          return true
+        })
+
+        if (stillAlive.length <= 1 && prev.alivePlayers.length > 1) {
+          return { ...prev, phase: "result", winner: stillAlive.length === 1 ? stillAlive[0] : "tie" }
         }
 
-        const gameLoop = (currentTime: number) => {
-            // Initialize lastTimeRef on the first frame.
-            if (lastTimeRef.current === 0) {
-                lastTimeRef.current = currentTime;
-            }
-            
-            // Calculate deltaTime: the time elapsed since the last frame in seconds.
-            // This is crucial for frame-rate independent physics and animations.
-            const deltaTime = (currentTime - lastTimeRef.current) / 1000;
-            lastTimeRef.current = currentTime;
-            
-            // The logic inside setGameState is the core of one game "tick".
-            setGameState((prev) => {
-                // Create deep copies of state that will be mutated.
-                const newGrid = prev.grid.map((row) =>
-                    row.map((tile) => ({
-                        ...tile,
-                        units: tile.units.map((u) => ({ ...u })),
-                        building: tile.building ? { ...tile.building } : undefined,
-                    })),
-                );
-                const newPlayers = JSON.parse(JSON.stringify(prev.players));
-                
-                // Update projectiles: move them based on velocity and deltaTime.
-                let newProjectiles = [...prev.projectiles]
-                    .map((p) => ({
-                        ...p,
-                        currentX: p.currentX + p.velocity.x * 60 * deltaTime, // 60 is a speed multiplier
-                        currentY: p.currentY + p.velocity.y * 60 * deltaTime,
-                    }))
-                    .filter((p) => {
-                        // Check for collision/target reached.
-                        if (Math.hypot(p.currentX - p.toX, p.currentY - p.toY) < 0.5) {
-                            // ... collision logic (damage, explosions) ...
-                            return false; // Remove projectile
-                        }
-                        return true; // Keep projectile
-                    });
-
-                // Update damage numbers, explosions (fade out over time).
-                const newDamageNumbers = [...prev.damageNumbers]
-                    .map((d) => ({ ...d, opacity: d.opacity - 1.5 * deltaTime, y: d.y - 2 * deltaTime }))
-                    .filter((d) => d.opacity > 0);
-                const newExplosions = [...prev.explosions]
-                    .map((e) => ({ ...e, radius: e.radius + 10 * deltaTime, opacity: e.opacity - 5 * deltaTime }))
-                    .filter((e) => e.opacity > 0);
-
-
-                // Iterate through every tile in the grid to update units and buildings.
-                for (let y = 0; y < GRID_SIZE; y++) {
-                    for (let x = 0; x < GRID_SIZE; x++) {
-                        const tile = newGrid[y][x];
-                        
-                        // Update units on the tile.
-                        tile.units = tile.units
-                            .map((u) => ({
-                                ...u,
-                                // Cooldowns are decreased based on deltaTime.
-                                cooldown: Math.max(0, u.cooldown - 60 * deltaTime),
-                                moveCooldown: Math.max(0, u.moveCooldown - 60 * deltaTime),
-                            }))
-                            .filter((u) => u.hp > 0); // Remove dead units.
-                        
-                        // Update buildings.
-                        if (tile.building) tile.building.cooldown = Math.max(0, tile.building.cooldown - 60 * deltaTime);
-
-                        // Unit logic: targeting and moving.
-                        tile.units.forEach((unit) => {
-                            if (unit.cooldown > 0) return;
-                            
-                            const stats = UNITS[unit.type];
-                            // ... Targeting logic to find an enemy to attack ...
-                            let target = null; // Placeholder for target finding logic
-
-                            if (target) {
-                                // ... Attacking logic (create projectiles or deal direct damage) ...
-                            } else if (unit.moveCooldown <= 0) {
-                                // If no target, find the next move position.
-                                const nextPos = getNextMovePosition(unit, x, y, prev.alivePlayers, prev.gameMode);
-                                if (nextPos && (nextPos.x !== x || nextPos.y !== y)) {
-                                    const nextTile = newGrid[nextPos.y]?.[nextPos.x];
-                                    if (nextTile && nextTile.units.length < 3 && !nextTile.building) {
-                                        // Move unit to the next tile.
-                                        nextTile.units.push({ ...unit, x: nextPos.x, y: nextPos.y, moveCooldown: stats.moveDelay });
-                                        tile.units = tile.units.filter((u) => u.id !== unit.id);
-                                    }
-                                }
-                            }
-                        });
-                    }
-                }
-                
-                // ... AI logic, checking for winners, etc. ...
-                
-                // Return the new state for this frame.
-                return {
-                    ...prev,
-                    grid: newGrid,
-                    players: newPlayers,
-                    projectiles: newProjectiles,
-                    damageNumbers: newDamageNumbers,
-                    explosions: newExplosions,
-                };
-            });
-
-            // Request the next frame to continue the loop.
-            gameLoopRef.current = requestAnimationFrame(gameLoop);
-        };
-
-        // Start the game loop.
-        gameLoopRef.current = requestAnimationFrame(gameLoop);
-
-        // Cleanup function: this runs when the component unmounts or dependencies change.
-        return () => {
-            if (gameLoopRef.current) {
-                cancelAnimationFrame(gameLoopRef.current);
-            }
-            // Reset lastTimeRef when the loop stops.
-            lastTimeRef.current = 0;
-        };
-    }, [gameState.phase, gameState.isPaused, getNextMovePosition]); // Dependencies array
+        return {
+          ...prev,
+          grid: newGrid,
+          players: newPlayers,
+          projectiles: newProjectiles,
+          damageNumbers: newDamageNumbers,
+          explosions: newExplosions,
+          alivePlayers: stillAlive,
+        }
+      })
+      gameLoopRef.current = requestAnimationFrame(gameLoop)
+    }
+    gameLoopRef.current = requestAnimationFrame(gameLoop)
+    return () => {
+      if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current)
+    }
+  }, [gameState.phase, gameState.isPaused, getNextMovePosition])
 
   // --- USER ACTIONS ---
   const deployCard = (x: number, y: number) => {
